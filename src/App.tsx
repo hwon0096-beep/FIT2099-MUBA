@@ -141,4 +141,4 @@ function Metric({ label, value, hint }: { label: string; value: string; hint: st
   )
 }
 
-export default App
+export { default } from './OptionsExplorer'

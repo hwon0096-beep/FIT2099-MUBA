@@ -1,4 +1,16 @@
-export function formatUsd(value: number | string | undefined, maximumFractionDigits = 2) {
+export function formatNumber(value: number | string | undefined, maximumFractionDigits = 2): string {
+  if (value === undefined) return 'Unavailable'
+  const numericValue = typeof value === 'string' ? Number(value) : value
+
+  if (!Number.isFinite(numericValue)) return 'Unavailable'
+
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits,
+  }).format(numericValue)
+}
+
+export function formatUsd(value: number | string | undefined, maximumFractionDigits = 2): string {
   if (value === undefined) return 'Unavailable'
   const numericValue = typeof value === 'string' ? Number(value) : value
 
@@ -7,23 +19,30 @@ export function formatUsd(value: number | string | undefined, maximumFractionDig
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
+    minimumFractionDigits: 2,
     maximumFractionDigits,
   }).format(numericValue)
 }
 
-export function formatExpiry(timestamp: bigint | string) {
-  return new Intl.DateTimeFormat('en-US', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
+export function formatExpiry(timestamp: bigint | string): string {
+  const date = new Date(Number(timestamp) * 1000)
+  if (Number.isNaN(date.getTime())) return 'Unavailable'
+
+  return `${new Intl.DateTimeFormat('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    hour12: false,
     timeZone: 'UTC',
-  }).format(new Date(Number(timestamp) * 1000))
+  }).format(date)} UTC`
 }
 
-export function formatTimestamp(timestamp: number | undefined) {
+export function formatTimestamp(timestamp: number | string | undefined): string {
   if (!timestamp) return 'Unavailable'
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return 'Unavailable'
 
-  return new Intl.DateTimeFormat('en-US', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(timestamp))
+  return `${new Intl.DateTimeFormat('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+    timeZone: 'UTC',
+  }).format(date)} UTC`
 }
