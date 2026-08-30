@@ -119,3 +119,6 @@ footer { padding-bottom: 8px; text-align: center; }
   .segmented-control button { min-width: 51px; padding-inline: 9px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
+
+.payoff-chart { background: #0e1526; border: 1px solid #202b43; border-radius: 14px; padding: 18px 20px 14px; }
+.payoff-chart-footnote { color: #7f8ca7; font-size: .78rem; line-height: 1.5; margin: 10px 0 0; }
