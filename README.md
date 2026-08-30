@@ -44,11 +44,11 @@ There is deliberately no signer, wallet connection, approval, private key, or tr
 - `client.api.getMarketData()`
 - `client.api.getBookProtocolStats()`
 
-Each server-side source has a 12-second timeout and is logged separately. The UI is in `src/App.tsx`; it shows live OptionBook orders and market/protocol metrics. If a live API/indexer source cannot be reached, the app shows its technical error and does not replace that source with mock data.
+Each server-side source has a 12-second timeout and is logged separately. The UI is in `src/OptionsExplorer.tsx`; it shows live OptionBook orders and market/protocol metrics. If a live API/indexer source cannot be reached, the app shows its technical error and does not replace that source with mock data.
 
 ## Remaining work
 
-- Add filtering, sorting, and selected-order details.
+- Add selected-order details.
 - Add reliable production RPC/indexer monitoring and retry policy.
 - Design and security-review a wallet/trading flow only when the team is ready to support transactions.
 - Add tests and deploy the static frontend.

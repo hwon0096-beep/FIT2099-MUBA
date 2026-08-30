@@ -94,10 +94,14 @@ function normalizeOrder(orderWithSignature: OrderWithSignature, client: Thetanut
   const priceFeed = rawApiData?.priceFeed.toLowerCase()
   const strikes = order.strikes ?? (order.strikePrice ? [order.strikePrice] : [])
 
+  const optionType = rawApiData ? (rawApiData.isCall ? 'CALL' : 'PUT') : 'UNKNOWN'
+
   return {
-    id: `${order.maker.slice(0, 6)}…${order.maker.slice(-4)}-${order.nonce.toString()}`,
+    // order.nonce alone collides across an order's legs (e.g. a call/put pair sharing one
+    // signature nonce), so the full id also folds in the fields that actually distinguish them.
+    id: `${order.maker}-${order.nonce.toString()}-${optionType}-${order.expiry.toString()}-${strikes.join('_')}-${order.price.toString()}`,
     asset: priceFeed ? (priceFeedSymbols[priceFeed] ?? 'Unknown') : 'Unknown',
-    optionType: rawApiData ? (rawApiData.isCall ? 'CALL' : 'PUT') : 'UNKNOWN',
+    optionType,
     strikes: strikes.length > 0 ? strikes.map((strike) => `$${formatAmount(strike, 8, 2)}`).join(' / ') : 'Not supplied',
     expiry: order.expiry.toString(),
     pricePerContract: formatAmount(order.price, 8, 6),

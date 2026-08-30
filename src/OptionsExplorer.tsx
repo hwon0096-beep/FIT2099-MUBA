@@ -13,6 +13,13 @@ const numericValue = (value: string): number => {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+// The Thetanuts SDK resolves Base price feeds to wrapped/bridged token symbols
+// (e.g. 'WETH', 'cbBTC') rather than the bare ticker, so match by substring.
+const matchesAssetFilter = (asset: string, filter: AssetFilter): boolean => {
+  if (filter === 'ALL') return true
+  return asset.trim().toUpperCase().includes(filter)
+}
+
 export default function OptionsExplorer() {
   const [data, setData] = useState<ExplorerData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -34,9 +41,14 @@ export default function OptionsExplorer() {
   useEffect(() => { void refresh() }, [refresh])
 
   const orders = data?.orders
+
+  useEffect(() => {
+    if (orders) console.log('Unique Option Types:', Array.from(new Set(orders.map((o) => o.optionType))))
+  }, [orders])
+
   const visibleOrders = useMemo(() => (orders ?? [])
-    .filter((order) => assetFilter === 'ALL' || order.asset.toUpperCase().includes(assetFilter))
-    .filter((order) => typeFilter === 'ALL' || order.optionType === typeFilter)
+    .filter((order) => matchesAssetFilter(order.asset, assetFilter))
+    .filter((order) => typeFilter === 'ALL' || order.optionType.trim().toUpperCase() === typeFilter)
     .sort((a, b) => {
       const values: Record<SortKey, [number, number]> = {
         strike: [numericValue(a.strikes), numericValue(b.strikes)],
