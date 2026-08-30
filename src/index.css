@@ -122,3 +122,15 @@ footer { padding-bottom: 8px; text-align: center; }
 
 .payoff-chart { background: #0e1526; border: 1px solid #202b43; border-radius: 14px; padding: 18px 20px 14px; }
 .payoff-chart-footnote { color: #7f8ca7; font-size: .78rem; line-height: 1.5; margin: 10px 0 0; }
+
+.risk-stat-grid { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 18px; }
+.risk-stat { background: #10182b; border: 1px solid #22304c; border-radius: 12px; padding: 14px 16px; }
+.risk-stat span { color: #8694af; display: block; font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; }
+.risk-stat strong { color: #f0f4fb; display: block; font-size: 1.3rem; font-variant-numeric: tabular-nums; margin: 8px 0 4px; }
+.risk-stat small { color: #65748e; font-size: .75rem; }
+.scenario-table { min-width: 420px; width: 100%; }
+.scenario-table th { color: #71809a; font-size: .67rem; letter-spacing: .06em; padding: 10px; text-align: left; text-transform: uppercase; }
+.scenario-table td { border-top: 1px solid #1d2a40; color: #cbd5e8; font-size: .85rem; padding: 11px 10px; }
+.scenario-table tr.scenario-current td { background: rgba(94, 230, 173, .08); font-weight: 700; }
+.pnl-positive { color: #7df0c4; }
+.pnl-negative { color: #ff9cbe; }
