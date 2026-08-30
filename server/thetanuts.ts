@@ -92,6 +92,12 @@ function normalizeOrder(orderWithSignature: OrderWithSignature, client: Thetanut
   const { order, rawApiData } = orderWithSignature
   const priceFeedSymbols = buildPriceFeedSymbolMap(BASE_CHAIN_ID)
   const priceFeed = rawApiData?.priceFeed.toLowerCase()
+  // strikes.length tells you the product structure (per @thetanuts-finance/thetanuts-client's
+  // PayoutType docs): 1 = vanilla call/put, 2 = vertical spread (call_spread/put_spread, strikes
+  // given as [near leg, far leg] — ascending for a call spread, descending for a put spread,
+  // since "near" is the long leg and that's the upper strike for a put), 3 = butterfly, 4 =
+  // condor/iron_condor/ranger. This app currently only has payoff math for the 1-strike case
+  // (src/lib/payoff.ts); 2+ strike orders are real distinct products, not a display quirk.
   const strikes = order.strikes ?? (order.strikePrice ? [order.strikePrice] : [])
 
   const optionType = rawApiData ? (rawApiData.isCall ? 'CALL' : 'PUT') : 'UNKNOWN'

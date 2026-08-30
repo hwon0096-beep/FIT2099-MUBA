@@ -150,6 +150,12 @@ function OrderRow({ order, onPreview }: { order: ExplorerOrder; onPreview: (orde
     <td className="numeric">{order.strikes}</td><td>{formatExpiry(order.expiry)}</td>
     <td className="numeric">{formatNumber(order.pricePerContract, 6)} <span className="unit">{order.collateral}</span></td>
     <td className="numeric">{formatNumber(order.contracts, 4)}</td>
+    {/*
+      length === 1 gates out real multi-leg products (2 strikes = vertical spread, 3 = butterfly,
+      4 = condor/iron_condor/ranger — see server/thetanuts.ts's note on `strikes`), not a display
+      quirk: TradePreviewModal's payoff math (src/lib/payoff.ts) only models a single-strike
+      vanilla call/put, so it would silently misprice anything with more than one strike.
+    */}
     <td>{order.optionType !== 'UNKNOWN' && parseStrikeList(order.strikes).length === 1 &&
       <button type="button" className="preview-button" onClick={() => onPreview(order)}>Preview payoff</button>}</td>
   </tr>
