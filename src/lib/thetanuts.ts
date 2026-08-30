@@ -1,0 +1,60 @@
+export interface ExplorerOrder {
+  id: string
+  asset: string
+  optionType: 'CALL' | 'PUT' | 'UNKNOWN'
+  strikes: string
+  expiry: string
+  pricePerContract: string
+  contracts: string
+  availableAmount: string
+  collateral: string
+}
+
+interface MarketData {
+  prices: {
+    ETH: number
+    BTC: number
+  }
+  metadata: {
+    lastUpdated: number
+  }
+}
+
+interface ProtocolStats {
+  totalVolumeUsd: string
+  totalPremiumUsd: string
+  totalPositions: number
+  '24h': {
+    positions: number
+  }
+}
+
+export interface ExplorerData {
+  orders?: ExplorerOrder[]
+  marketData?: MarketData
+  protocolStats?: {
+    stats: ProtocolStats
+  }
+  errors: string[]
+  fetchedAt: string
+}
+
+export async function loadExplorerData(): Promise<ExplorerData> {
+  console.info('[Thetanuts Explorer] Fetching /api/thetanuts')
+  const response = await fetch('/api/thetanuts', { headers: { Accept: 'application/json' } })
+  const payload: unknown = await response.json()
+
+  if (!isExplorerData(payload)) {
+    throw new Error(`Thetanuts API returned an invalid response (${response.status})`)
+  }
+
+  if (!response.ok) {
+    console.error('[Thetanuts Explorer] /api/thetanuts failed', payload.errors)
+  }
+
+  return payload
+}
+
+function isExplorerData(value: unknown): value is ExplorerData {
+  return typeof value === 'object' && value !== null && Array.isArray((value as ExplorerData).errors)
+}

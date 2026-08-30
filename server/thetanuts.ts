@@ -1,0 +1,139 @@
+import {
+  MemoryStorageProvider,
+  ThetanutsClient,
+  buildPriceFeedSymbolMap,
+  formatAmount,
+  type MarketDataResponse,
+  type OrderWithSignature,
+  type ProtocolStatsResponse,
+} from '@thetanuts-finance/thetanuts-client'
+import { ethers } from 'ethers'
+
+const BASE_CHAIN_ID = 8453 as const
+const DEFAULT_BASE_RPC_URL = 'https://mainnet.base.org'
+const SOURCE_TIMEOUT_MS = 12_000
+
+export interface ExplorerOrder {
+  id: string
+  asset: string
+  optionType: 'CALL' | 'PUT' | 'UNKNOWN'
+  strikes: string
+  expiry: string
+  pricePerContract: string
+  contracts: string
+  availableAmount: string
+  collateral: string
+}
+
+export interface ThetanutsApiResponse {
+  orders?: ExplorerOrder[]
+  marketData?: MarketDataResponse
+  protocolStats?: ProtocolStatsResponse
+  errors: string[]
+  fetchedAt: string
+}
+
+function createReadOnlyClient() {
+  console.info('[Thetanuts API] Creating read-only client')
+  const provider = new ethers.JsonRpcProvider(process.env.BASE_RPC_URL || DEFAULT_BASE_RPC_URL)
+
+  return new ThetanutsClient({
+    chainId: BASE_CHAIN_ID,
+    provider,
+    keyStorageProvider: new MemoryStorageProvider(),
+  })
+}
+
+function describeFailure(source: string, reason: unknown) {
+  const message = reason instanceof Error ? reason.message : String(reason)
+  return `${source} could not be loaded: ${message}`
+}
+
+function withTimeout<T>(source: string, request: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(`${source} timed out after ${SOURCE_TIMEOUT_MS / 1000} seconds`)), SOURCE_TIMEOUT_MS)
+
+    request.then(
+      (value) => {
+        clearTimeout(timeout)
+        resolve(value)
+      },
+      (error: unknown) => {
+        clearTimeout(timeout)
+        reject(error)
+      },
+    )
+  })
+}
+
+async function loadSource<T>(source: string, request: () => Promise<T>): Promise<T> {
+  try {
+    console.info(`[Thetanuts API] ${source} started`)
+    const value = await withTimeout(source, request())
+    console.info(`[Thetanuts API] ${source} succeeded`)
+    return value
+  } catch (error) {
+    console.error(`[Thetanuts API] ${source} failed`, error)
+    throw error
+  }
+}
+
+function tokenSymbol(address: string | undefined, client: ThetanutsClient) {
+  if (!address) return 'Unknown collateral'
+
+  const token = Object.values(client.chainConfig.tokens).find(
+    ({ address: tokenAddress }) => tokenAddress.toLowerCase() === address.toLowerCase(),
+  )
+
+  return token?.symbol ?? `${address.slice(0, 6)}…${address.slice(-4)}`
+}
+
+function normalizeOrder(orderWithSignature: OrderWithSignature, client: ThetanutsClient): ExplorerOrder {
+  const { order, rawApiData } = orderWithSignature
+  const priceFeedSymbols = buildPriceFeedSymbolMap(BASE_CHAIN_ID)
+  const priceFeed = rawApiData?.priceFeed.toLowerCase()
+  const strikes = order.strikes ?? (order.strikePrice ? [order.strikePrice] : [])
+
+  return {
+    id: `${order.maker.slice(0, 6)}…${order.maker.slice(-4)}-${order.nonce.toString()}`,
+    asset: priceFeed ? (priceFeedSymbols[priceFeed] ?? 'Unknown') : 'Unknown',
+    optionType: rawApiData ? (rawApiData.isCall ? 'CALL' : 'PUT') : 'UNKNOWN',
+    strikes: strikes.length > 0 ? strikes.map((strike) => `$${formatAmount(strike, 8, 2)}`).join(' / ') : 'Not supplied',
+    expiry: order.expiry.toString(),
+    pricePerContract: formatAmount(order.price, 8, 6),
+    contracts: formatAmount(order.numContracts, 6, 4),
+    availableAmount: formatAmount(orderWithSignature.availableAmount, 6, 4),
+    collateral: tokenSymbol(rawApiData?.collateral ?? order.collateralToken, client),
+  }
+}
+
+export async function loadThetanutsData(): Promise<ThetanutsApiResponse> {
+  const errors: string[] = []
+  const data: ThetanutsApiResponse = { errors, fetchedAt: new Date().toISOString() }
+  let client: ThetanutsClient
+
+  try {
+    client = createReadOnlyClient()
+  } catch (error) {
+    console.error('[Thetanuts API] Client creation failed', error)
+    errors.push(describeFailure('Thetanuts client creation', error))
+    return data
+  }
+
+  const [ordersResult, marketResult, statsResult] = await Promise.allSettled([
+    loadSource('fetchOrders()', () => client.api.fetchOrders()),
+    loadSource('getMarketData()', () => client.api.getMarketData()),
+    loadSource('getBookProtocolStats()', () => client.api.getBookProtocolStats()),
+  ])
+
+  if (ordersResult.status === 'fulfilled') data.orders = ordersResult.value.map((order) => normalizeOrder(order, client))
+  else errors.push(describeFailure('Live OptionBook orders', ordersResult.reason))
+
+  if (marketResult.status === 'fulfilled') data.marketData = marketResult.value
+  else errors.push(describeFailure('Live market data', marketResult.reason))
+
+  if (statsResult.status === 'fulfilled') data.protocolStats = statsResult.value
+  else errors.push(describeFailure('Live OptionBook protocol statistics', statsResult.reason))
+
+  return data
+}
