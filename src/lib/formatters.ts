@@ -1,3 +1,9 @@
+/** Parses order fields like strike/premium strings (which may carry a unit suffix, e.g. "1800/ETH") down to a plain number. */
+export function parseOrderNumber(value: string): number {
+  const parsed = Number(value.replace(/[^0-9.-]/g, '').split('/')[0])
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 export function formatNumber(value: number | string | undefined, maximumFractionDigits = 2): string {
   if (value === undefined) return 'Unavailable'
   const numericValue = typeof value === 'string' ? Number(value) : value

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { formatExpiry, formatNumber, formatTimestamp, formatUsd } from './lib/formatters'
+import { formatExpiry, formatNumber, formatTimestamp, formatUsd, parseOrderNumber } from './lib/formatters'
 import { loadExplorerData, type ExplorerData, type ExplorerOrder } from './lib/thetanuts'
 
 type AssetFilter = 'ALL' | 'ETH' | 'BTC'
@@ -8,10 +8,7 @@ type SortKey = 'strike' | 'expiry' | 'premium'
 type SortDirection = 'asc' | 'desc'
 interface SortState { key: SortKey; direction: SortDirection }
 
-const numericValue = (value: string): number => {
-  const parsed = Number(value.replace(/[^0-9.-]/g, '').split('/')[0])
-  return Number.isFinite(parsed) ? parsed : 0
-}
+const numericValue = parseOrderNumber
 
 // The Thetanuts SDK resolves Base price feeds to wrapped/bridged token symbols
 // (e.g. 'WETH', 'cbBTC') rather than the bare ticker, so match by substring.
