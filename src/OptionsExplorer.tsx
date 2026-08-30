@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { formatExpiry, formatNumber, formatTimestamp, formatUsd, parseOrderNumber, parseStrikeList } from './lib/formatters'
 import { loadExplorerData, type ExplorerData, type ExplorerOrder } from './lib/thetanuts'
 import TradePreviewModal from './components/TradePreviewModal'
+import PayoffShowcase from './components/PayoffShowcase'
 
 type AssetFilter = 'ALL' | 'ETH' | 'BTC'
 type TypeFilter = 'ALL' | 'CALL' | 'PUT'
@@ -69,6 +70,7 @@ export default function OptionsExplorer() {
       {requestError && <Notice title="We couldn’t refresh the live data." messages={[`${requestError} Please check the server connection and try again.`]} />}
       {!!data?.errors.length && <Notice title="Some live sources are temporarily unavailable." messages={data.errors} />}
       <MarketSnapshot data={data} loading={loading} />
+      <PayoffShowcase orders={orders} marketData={data?.marketData} />
       <OrdersPanel assetFilter={assetFilter} loading={loading} orders={orders} sort={sort} typeFilter={typeFilter}
         visibleOrders={visibleOrders} onAssetChange={setAssetFilter} onSort={toggleSort} onTypeChange={setTypeFilter}
         onPreview={setPreviewOrder} />
