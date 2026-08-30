@@ -39,6 +39,15 @@ export interface ExplorerData {
   fetchedAt: string
 }
 
+/** Resolves an order's underlying spot price from market data by matching the asset symbol (wrapped/bridged tickers included, e.g. 'WETH', 'cbBTC'). */
+export function resolveAssetPrice(asset: string, prices: MarketData['prices'] | undefined): number | undefined {
+  if (!prices) return undefined
+  const upper = asset.trim().toUpperCase()
+  if (upper.includes('ETH')) return prices.ETH
+  if (upper.includes('BTC')) return prices.BTC
+  return undefined
+}
+
 export async function loadExplorerData(): Promise<ExplorerData> {
   console.info('[Thetanuts Explorer] Fetching /api/thetanuts')
   const response = await fetch('/api/thetanuts', { headers: { Accept: 'application/json' } })

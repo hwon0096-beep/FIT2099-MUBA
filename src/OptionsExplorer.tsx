@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { formatExpiry, formatNumber, formatTimestamp, formatUsd, parseOrderNumber } from './lib/formatters'
+import { formatExpiry, formatNumber, formatTimestamp, formatUsd, parseOrderNumber, parseStrikeList } from './lib/formatters'
 import { loadExplorerData, type ExplorerData, type ExplorerOrder } from './lib/thetanuts'
+import TradePreviewModal from './components/TradePreviewModal'
 
 type AssetFilter = 'ALL' | 'ETH' | 'BTC'
 type TypeFilter = 'ALL' | 'CALL' | 'PUT'
@@ -24,6 +25,7 @@ export default function OptionsExplorer() {
   const [assetFilter, setAssetFilter] = useState<AssetFilter>('ALL')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('ALL')
   const [sort, setSort] = useState<SortState>({ key: 'expiry', direction: 'asc' })
+  const [previewOrder, setPreviewOrder] = useState<ExplorerOrder | null>(null)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -68,8 +70,10 @@ export default function OptionsExplorer() {
       {!!data?.errors.length && <Notice title="Some live sources are temporarily unavailable." messages={data.errors} />}
       <MarketSnapshot data={data} loading={loading} />
       <OrdersPanel assetFilter={assetFilter} loading={loading} orders={orders} sort={sort} typeFilter={typeFilter}
-        visibleOrders={visibleOrders} onAssetChange={setAssetFilter} onSort={toggleSort} onTypeChange={setTypeFilter} />
+        visibleOrders={visibleOrders} onAssetChange={setAssetFilter} onSort={toggleSort} onTypeChange={setTypeFilter}
+        onPreview={setPreviewOrder} />
       <footer>Data source: Thetanuts Finance OptionBook/indexer via <code>@thetanuts-finance/thetanuts-client</code>. This dashboard is read-only.</footer>
+      {previewOrder && <TradePreviewModal order={previewOrder} marketData={data?.marketData} onClose={() => setPreviewOrder(null)} />}
     </main>
   )
 }
@@ -114,11 +118,11 @@ function MarketSnapshot({ data, loading }: { data: ExplorerData | null; loading:
 interface OrdersPanelProps {
   assetFilter: AssetFilter; loading: boolean; orders: ExplorerOrder[] | undefined; sort: SortState; typeFilter: TypeFilter
   visibleOrders: ExplorerOrder[]; onAssetChange: (value: AssetFilter) => void; onSort: (key: SortKey) => void
-  onTypeChange: (value: TypeFilter) => void
+  onTypeChange: (value: TypeFilter) => void; onPreview: (order: ExplorerOrder) => void
 }
 
 function OrdersPanel(props: OrdersPanelProps) {
-  const { assetFilter, loading, orders, sort, typeFilter, visibleOrders, onAssetChange, onSort, onTypeChange } = props
+  const { assetFilter, loading, orders, sort, typeFilter, visibleOrders, onAssetChange, onSort, onTypeChange, onPreview } = props
   const total = orders?.length ?? 0
   return <section className="section order-section" aria-labelledby="orders-heading">
     <SectionHeading eyebrow="LIVE OPTIONBOOK" title="Available option orders" id="orders-heading"
@@ -135,17 +139,20 @@ function OrdersPanel(props: OrdersPanelProps) {
       <SortableHeading label="Strike price" sortKey="strike" sort={sort} onSort={onSort} />
       <SortableHeading label="Expiry (UTC)" sortKey="expiry" sort={sort} onSort={onSort} />
       <SortableHeading label="Premium per contract" sortKey="premium" sort={sort} onSort={onSort} />
-      <th>Contracts available</th>
-    </tr></thead><tbody>{visibleOrders.map((order) => <OrderRow key={order.id} order={order} />)}</tbody></table></div>}
+      <th>Contracts available</th><th aria-label="Actions" />
+    </tr></thead><tbody>{visibleOrders.map((order) => <OrderRow key={order.id} order={order} onPreview={onPreview} />)}</tbody></table></div>}
   </section>
 }
 
-function OrderRow({ order }: { order: ExplorerOrder }) {
+function OrderRow({ order, onPreview }: { order: ExplorerOrder; onPreview: (order: ExplorerOrder) => void }) {
   return <tr><td><strong className="asset-name">{order.asset}</strong></td>
     <td><span className={`option-type ${order.optionType.toLowerCase()}`}>{order.optionType}</span></td>
     <td className="numeric">{order.strikes}</td><td>{formatExpiry(order.expiry)}</td>
     <td className="numeric">{formatNumber(order.pricePerContract, 6)} <span className="unit">{order.collateral}</span></td>
-    <td className="numeric">{formatNumber(order.contracts, 4)}</td></tr>
+    <td className="numeric">{formatNumber(order.contracts, 4)}</td>
+    <td>{order.optionType !== 'UNKNOWN' && parseStrikeList(order.strikes).length === 1 &&
+      <button type="button" className="preview-button" onClick={() => onPreview(order)}>Preview payoff</button>}</td>
+  </tr>
 }
 
 function FilterGroup({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {

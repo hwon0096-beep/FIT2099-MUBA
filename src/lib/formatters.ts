@@ -1,7 +1,21 @@
-/** Parses order fields like strike/premium strings (which may carry a unit suffix, e.g. "1800/ETH") down to a plain number. */
+/** Parses order fields like strike/premium strings (which may carry a unit suffix, e.g. "1800/ETH") down to a plain number, taking the first '/'-separated segment. */
 export function parseOrderNumber(value: string): number {
-  const parsed = Number(value.replace(/[^0-9.-]/g, '').split('/')[0])
+  const [firstSegment] = value.split('/')
+  const parsed = Number(firstSegment.replace(/[^0-9.-]/g, ''))
   return Number.isFinite(parsed) ? parsed : 0
+}
+
+/**
+ * Orders can carry more than one strike (e.g. "$2400 / $2450" for spread-style structures — see
+ * server/thetanuts.ts's `strikes.map(...).join(' / ')`). Returns every numeric strike found, so
+ * callers can tell a plain single-strike vanilla option apart from a multi-leg structure.
+ */
+export function parseStrikeList(value: string): number[] {
+  return value.split('/')
+    .map((segment) => segment.replace(/[^0-9.-]/g, ''))
+    .filter((segment) => segment.length > 0)
+    .map(Number)
+    .filter((parsed) => Number.isFinite(parsed))
 }
 
 export function formatNumber(value: number | string | undefined, maximumFractionDigits = 2): string {
@@ -25,7 +39,7 @@ export function formatUsd(value: number | string | undefined, maximumFractionDig
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
-    minimumFractionDigits: 2,
+    minimumFractionDigits: Math.min(2, maximumFractionDigits),
     maximumFractionDigits,
   }).format(numericValue)
 }

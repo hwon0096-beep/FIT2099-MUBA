@@ -134,3 +134,24 @@ footer { padding-bottom: 8px; text-align: center; }
 .scenario-table tr.scenario-current td { background: rgba(94, 230, 173, .08); font-weight: 700; }
 .pnl-positive { color: #7df0c4; }
 .pnl-negative { color: #ff9cbe; }
+
+.preview-button { background: transparent; border: 1px solid #2c956f; border-radius: 8px; color: #82edc9; cursor: pointer; font-size: .78rem; font-weight: 700; padding: 7px 12px; white-space: nowrap; }
+.preview-button:hover { background: rgba(28, 103, 78, .28); }
+
+.modal-backdrop { align-items: flex-start; background: rgba(4, 8, 16, .72); bottom: 0; display: flex; justify-content: center; left: 0; overflow-y: auto; padding: 5vh 20px; position: fixed; right: 0; top: 0; z-index: 50; }
+.modal-panel { background: linear-gradient(145deg, #0e1526, #0a1020); border: 1px solid #202b43; border-radius: 20px; box-shadow: 0 30px 90px rgba(0, 0, 0, .45); max-width: 720px; padding: 28px 30px 24px; width: 100%; }
+.modal-header { align-items: flex-start; display: flex; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.modal-header h2 { align-items: center; color: #f0f4fb; display: flex; font-size: 1.5rem; gap: 10px; }
+.modal-subtext { color: #8694af; font-size: .85rem; margin-top: 6px; }
+.modal-close { background: transparent; border: 0; color: #7f8ca7; cursor: pointer; font-size: 1.6rem; line-height: 1; padding: 4px; }
+.modal-close:hover { color: #e8edf8; }
+.modal-controls { display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 18px; }
+.modal-field { color: #8694af; display: flex; flex-direction: column; font-size: .78rem; gap: 8px; }
+.modal-field-wide { flex: 1; min-width: 260px; }
+.modal-field input[type="number"] { background: #10182b; border: 1px solid #22304c; border-radius: 8px; color: #e8edf8; padding: 8px 10px; width: 110px; }
+.modal-field input[type="range"] { accent-color: #5ee6ad; width: 100%; }
+.modal-footer { display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px; }
+.modal-cancel { background: transparent; border: 1px solid #22304c; border-radius: 8px; color: #cbd5e8; cursor: pointer; font-weight: 700; padding: 10px 18px; }
+.modal-cancel:hover { border-color: #334967; }
+.modal-confirm { background: linear-gradient(180deg, #4ee2aa, #25bd88); border: 0; border-radius: 8px; color: #061711; cursor: not-allowed; font-weight: 800; opacity: .55; padding: 10px 18px; }
+.modal-panel .risk-summary { margin-top: 18px; }

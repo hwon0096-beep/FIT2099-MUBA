@@ -19,7 +19,8 @@ export default function PayoffChart({ inputs, hypotheticalPrice }: PayoffChartPr
     <ResponsiveContainer width="100%" height={280}>
       <LineChart data={curve} margin={{ top: 12, right: 18, bottom: 4, left: 4 }}>
         <CartesianGrid stroke="#202b43" strokeDasharray="3 3" vertical={false} />
-        <XAxis dataKey="price" stroke="#7f8ca7" fontSize={12} tickFormatter={(value: number) => formatUsd(value, 0)}
+        <XAxis dataKey="price" type="number" domain={['dataMin', 'dataMax']} stroke="#7f8ca7" fontSize={12}
+          tickFormatter={(value: number) => formatUsd(value, 0)}
           tick={{ fill: '#7f8ca7' }} tickLine={false} axisLine={{ stroke: '#202b43' }} />
         <YAxis stroke="#7f8ca7" fontSize={12} tickFormatter={(value: number) => formatUsd(value, 0)}
           tick={{ fill: '#7f8ca7' }} tickLine={false} axisLine={{ stroke: '#202b43' }} width={78} />
