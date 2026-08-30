@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
-import { formatExpiry, formatUsd, parseOrderNumber, parseStrikeList } from '../lib/formatters'
-import type { PayoffInputs } from '../lib/payoff'
-import { resolveAssetPrice, type ExplorerData, type ExplorerOrder } from '../lib/thetanuts'
-import PayoffChart from './PayoffChart'
-import RiskSummary from './RiskSummary'
+import { useEffect } from 'react'
+import { formatExpiry, formatUsd } from '../lib/formatters'
+import { buildPayoffFacts } from '../lib/orderPayoff'
+import type { ExplorerData, ExplorerOrder } from '../lib/thetanuts'
+import PayoffPreviewBody from './PayoffPreviewBody'
 
 interface TradePreviewModalProps {
   order: ExplorerOrder
@@ -12,27 +11,17 @@ interface TradePreviewModalProps {
 }
 
 export default function TradePreviewModal({ order, marketData, onClose }: TradePreviewModalProps) {
-  const optionType = order.optionType === 'PUT' ? 'PUT' : 'CALL'
-  const strike = parseStrikeList(order.strikes)[0] ?? 0
-  const premium = parseOrderNumber(order.pricePerContract)
-  const currentPrice = resolveAssetPrice(order.asset, marketData?.prices) ?? strike
-
-  const [positionSize, setPositionSize] = useState(1)
-  const [hypotheticalPrice, setHypotheticalPrice] = useState(currentPrice)
-
-  useEffect(() => { setHypotheticalPrice(currentPrice) }, [currentPrice])
-
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
 
-  const inputs: PayoffInputs = useMemo(() => ({ optionType, strike, premium, positionSize, currentPrice }),
-    [optionType, strike, premium, positionSize, currentPrice])
+  const payoff = buildPayoffFacts(order, marketData)
+  if (!payoff) return null
 
-  const sliderMin = currentPrice * 0.7
-  const sliderMax = currentPrice * 1.3
+  const badgeLabel = payoff.kind === 'spread' ? `${order.optionType} SPREAD` : order.optionType
+  const strikeLabel = payoff.kind === 'vanilla' ? `Strike ${formatUsd(payoff.strike)}` : `Strikes ${order.strikes}`
 
   return <div className="modal-backdrop" role="presentation" onClick={onClose}>
     <div className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="trade-preview-heading"
@@ -40,27 +29,13 @@ export default function TradePreviewModal({ order, marketData, onClose }: TradeP
       <header className="modal-header">
         <div>
           <p className="eyebrow">TRADE PREVIEW · SETTLES AT EXPIRY</p>
-          <h2 id="trade-preview-heading">{order.asset} <span className={`option-type ${optionType.toLowerCase()}`}>{optionType}</span></h2>
-          <p className="modal-subtext">Strike {formatUsd(strike)} · Expiry {formatExpiry(order.expiry)}</p>
+          <h2 id="trade-preview-heading">{order.asset} <span className={`option-type ${order.optionType.toLowerCase()}`}>{badgeLabel}</span></h2>
+          <p className="modal-subtext">{strikeLabel} · Expiry {formatExpiry(order.expiry)}</p>
         </div>
         <button type="button" className="modal-close" onClick={onClose} aria-label="Close trade preview">×</button>
       </header>
 
-      <div className="modal-controls">
-        <label className="modal-field">
-          <span>Position size (contracts)</span>
-          <input type="number" min={0} step="any" value={positionSize}
-            onChange={(event) => setPositionSize(Math.max(0, Number(event.target.value) || 0))} />
-        </label>
-        <label className="modal-field modal-field-wide">
-          <span>Hypothetical price at expiry: {formatUsd(hypotheticalPrice)}</span>
-          <input type="range" min={sliderMin} max={sliderMax} step={(sliderMax - sliderMin) / 200 || 1}
-            value={hypotheticalPrice} onChange={(event) => setHypotheticalPrice(Number(event.target.value))} />
-        </label>
-      </div>
-
-      <PayoffChart inputs={inputs} hypotheticalPrice={hypotheticalPrice} />
-      <RiskSummary inputs={inputs} />
+      <PayoffPreviewBody payoff={payoff} />
 
       <footer className="modal-footer">
         <button type="button" className="modal-cancel" onClick={onClose}>Cancel</button>

@@ -1,21 +1,22 @@
 import { formatUsd } from '../lib/formatters'
-import { breakevenPrice, buildScenarios, maxLossTotal, type PayoffInputs } from '../lib/payoff'
 
 interface RiskSummaryProps {
-  inputs: PayoffInputs
+  maxLoss: number
+  breakeven: number
+  costTotal: number
+  premiumPerContract: number
+  scenarios: { changePercent: number; price: number; pnl: number }[]
+  /** Only capped-upside products (e.g. vertical spreads) provide this; a vanilla long call's gain is uncapped. */
+  maxGain?: number
 }
 
-export default function RiskSummary({ inputs }: RiskSummaryProps) {
-  const breakeven = breakevenPrice(inputs.optionType, inputs.strike, inputs.premium)
-  const maxLoss = maxLossTotal(inputs.premium, inputs.positionSize)
-  const costTotal = inputs.premium * inputs.positionSize
-  const scenarios = buildScenarios(inputs)
-
+export default function RiskSummary({ maxLoss, breakeven, costTotal, premiumPerContract, scenarios, maxGain }: RiskSummaryProps) {
   return <div className="risk-summary">
     <div className="risk-stat-grid">
       <RiskStat label="Max loss" value={formatUsd(maxLoss)} hint="Capped at premium paid" />
       <RiskStat label="Breakeven price" value={formatUsd(breakeven)} hint="Settlement price at expiry" />
-      <RiskStat label="Cost / premium" value={formatUsd(costTotal)} hint={`${formatUsd(inputs.premium)} per contract`} />
+      <RiskStat label="Cost / premium" value={formatUsd(costTotal)} hint={`${formatUsd(premiumPerContract)} per contract`} />
+      {maxGain !== undefined && <RiskStat label="Max gain" value={formatUsd(maxGain)} hint="Capped at the strike width" />}
     </div>
     <div className="table-wrap">
       <table className="scenario-table">

@@ -151,13 +151,16 @@ function OrderRow({ order, onPreview }: { order: ExplorerOrder; onPreview: (orde
     <td className="numeric">{formatNumber(order.pricePerContract, 6)} <span className="unit">{order.collateral}</span></td>
     <td className="numeric">{formatNumber(order.contracts, 4)}</td>
     {/*
-      length === 1 gates out real multi-leg products (2 strikes = vertical spread, 3 = butterfly,
-      4 = condor/iron_condor/ranger — see server/thetanuts.ts's note on `strikes`), not a display
-      quirk: TradePreviewModal's payoff math (src/lib/payoff.ts) only models a single-strike
-      vanilla call/put, so it would silently misprice anything with more than one strike.
+      1 strike = vanilla call/put (src/lib/payoff.ts), 2 strikes = vertical spread
+      (src/lib/spreadPayoff.ts) — both have payoff math and are eligible for the preview. 3+
+      strikes (butterfly, condor/iron_condor/ranger — see server/thetanuts.ts's note on `strikes`)
+      have no payoff math yet, so those rows stay hidden rather than showing a mispriced chart.
     */}
-    <td>{order.optionType !== 'UNKNOWN' && parseStrikeList(order.strikes).length === 1 &&
-      <button type="button" className="preview-button" onClick={() => onPreview(order)}>Preview payoff</button>}</td>
+    <td>{(() => {
+      const strikeCount = parseStrikeList(order.strikes).length
+      return order.optionType !== 'UNKNOWN' && (strikeCount === 1 || strikeCount === 2) &&
+        <button type="button" className="preview-button" onClick={() => onPreview(order)}>Preview payoff</button>
+    })()}</td>
   </tr>
 }
 

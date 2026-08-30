@@ -1,16 +1,15 @@
 import { CartesianGrid, Line, LineChart, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { formatUsd } from '../lib/formatters'
-import { breakevenPrice, buildPayoffCurve, maxLossTotal, type PayoffInputs } from '../lib/payoff'
 
 interface PayoffChartProps {
-  inputs: PayoffInputs
+  curve: { price: number; pnl: number }[]
+  currentPrice: number
+  breakeven: number
   hypotheticalPrice: number
+  footnote: string
 }
 
-export default function PayoffChart({ inputs, hypotheticalPrice }: PayoffChartProps) {
-  const curve = buildPayoffCurve(inputs)
-  const breakeven = breakevenPrice(inputs.optionType, inputs.strike, inputs.premium)
-  const maxLoss = maxLossTotal(inputs.premium, inputs.positionSize)
+export default function PayoffChart({ curve, currentPrice, breakeven, hypotheticalPrice, footnote }: PayoffChartProps) {
   const hypotheticalPnl = curve.length
     ? curve.reduce((closest, point) => Math.abs(point.price - hypotheticalPrice) < Math.abs(closest.price - hypotheticalPrice) ? point : closest).pnl
     : 0
@@ -29,7 +28,7 @@ export default function PayoffChart({ inputs, hypotheticalPrice }: PayoffChartPr
           labelFormatter={(value) => `Expiry price: ${formatUsd(Number(value))}`}
           formatter={(value) => [formatUsd(Number(value)), 'Net P&L']} />
         <ReferenceLine y={0} stroke="#4a5a7a" />
-        <ReferenceLine x={inputs.currentPrice} stroke="#5ee6ad" strokeDasharray="4 4"
+        <ReferenceLine x={currentPrice} stroke="#5ee6ad" strokeDasharray="4 4"
           label={{ value: 'Spot', position: 'insideTopRight', fill: '#5ee6ad', fontSize: 11 }} />
         <ReferenceLine x={breakeven} stroke="#75e6c1"
           label={{ value: 'Breakeven', position: 'insideBottomRight', fill: '#75e6c1', fontSize: 11 }} />
@@ -37,6 +36,6 @@ export default function PayoffChart({ inputs, hypotheticalPrice }: PayoffChartPr
         <Line type="monotone" dataKey="pnl" stroke="#5ee6ad" strokeWidth={2.5} dot={false} isAnimationActive={false} />
       </LineChart>
     </ResponsiveContainer>
-    <p className="payoff-chart-footnote">Max loss is capped at the premium paid ({formatUsd(maxLoss)}), since this is a long option position with no early exercise.</p>
+    <p className="payoff-chart-footnote">{footnote}</p>
   </div>
 }
