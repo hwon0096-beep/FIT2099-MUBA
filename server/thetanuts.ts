@@ -117,6 +117,16 @@ function normalizeOrder(orderWithSignature: OrderWithSignature, client: Thetanut
   }
 }
 
+// Thetanuts' orderbook API (client.api.fetchOrders()'s apiBaseUrl) doesn't send
+// Access-Control-Allow-Origin, so a browser can't call it directly — only from
+// here, server-side. Unlike loadThetanutsData()'s normalizeOrder() output, this
+// keeps the raw OrderWithSignature (signature + rawApiData intact) since that's
+// what previewFillOrder()/fillOrder() require to actually fill an order.
+export async function fetchRawOrders(): Promise<OrderWithSignature[]> {
+  const client = createReadOnlyClient()
+  return loadSource('fetchOrders()', () => client.api.fetchOrders())
+}
+
 export async function loadThetanutsData(): Promise<ThetanutsApiResponse> {
   const errors: string[] = []
   const data: ThetanutsApiResponse = { errors, fetchedAt: new Date().toISOString() }

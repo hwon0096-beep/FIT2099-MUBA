@@ -7,6 +7,7 @@ import {
   OrderExpiredError,
   ThetanutsError,
   OptionTypeEnum,
+  MemoryStorageProvider,
   type OrderWithSignature,
 } from '@thetanuts-finance/thetanuts-client'
 import { formatExpiry } from './lib/formatters'
@@ -94,6 +95,15 @@ function describeFillError(error: unknown): string {
   if (error instanceof ThetanutsError) return error.message
   if (error instanceof Error) return error.message
   return 'An unknown error occurred.'
+}
+
+// Mirrors the { $bigint: "..." } marshalling in server/index.ts's /api/fill/orders,
+// reversing it back into real bigints so previewFillOrder()/fillOrder() get the
+// types they expect (order.price, .expiry, .nonce, .strikes, availableAmount, ...).
+function parseOrdersWithBigInts(text: string): OrderWithSignature[] {
+  return JSON.parse(text, (_key, value) => (
+    value && typeof value === 'object' && '$bigint' in value ? BigInt((value as { $bigint: string }).$bigint) : value
+  ))
 }
 
 function tokenSymbolFor(client: ThetanutsClient, address: string): string {
@@ -211,14 +221,34 @@ export default function FillFlow() {
       setClient(null)
       return
     }
-    setClient(new ThetanutsClient({ chainId: 8453, provider: connection.provider, signer: connection.signer }))
+    // ThetanutsClient always builds an RFQKeyManagerModule internally, even though
+    // this flow only ever uses OptionBook (fetchOrders/previewFillOrder/fillOrder).
+    // Without an explicit keyStorageProvider it throws InvalidKeyError in any
+    // browser context rather than defaulting to plaintext localStorage. We never
+    // call anything under client.rfqKeys, so an in-memory provider is a no-op here.
+    setClient(new ThetanutsClient({
+      chainId: 8453,
+      provider: connection.provider,
+      signer: connection.signer,
+      keyStorageProvider: new MemoryStorageProvider(),
+    }))
   }, [connection, chain])
 
   const loadOrders = useCallback(async () => {
     if (!client) return
     setOrdersState({ loading: true, orders: null, error: null })
     try {
-      const orders = await client.api.fetchOrders()
+      // Not client.api.fetchOrders() directly: Thetanuts' orderbook API doesn't
+      // send Access-Control-Allow-Origin, so the browser can't read it cross-origin.
+      // The local server proxies it (see server/index.ts's /api/fill/orders).
+      const response = await fetch('/api/fill/orders', { headers: { Accept: 'application/json' } })
+      const text = await response.text()
+      if (!response.ok) {
+        const body: unknown = JSON.parse(text)
+        const message = typeof body === 'object' && body !== null && 'error' in body ? String((body as { error: unknown }).error) : `Request failed with status ${response.status}`
+        throw new Error(message)
+      }
+      const orders = parseOrdersWithBigInts(text)
       setOrdersState({ loading: false, orders, error: null })
     } catch (error) {
       setOrdersState({ loading: false, orders: null, error: error instanceof Error ? error.message : 'Could not load orders.' })
