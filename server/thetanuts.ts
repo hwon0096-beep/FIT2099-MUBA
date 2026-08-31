@@ -65,17 +65,123 @@ function createProvider(): ethers.Provider {
 function createReadOnlyClient() {
   console.info('[Thetanuts API] Creating read-only client')
   const provider = createProvider()
-
-  return new ThetanutsClient({
+  const client = new ThetanutsClient({
     chainId: BASE_CHAIN_ID,
     provider,
     keyStorageProvider: new MemoryStorageProvider(),
   })
+
+  // These values are SDK defaults/configuration, not user-supplied requests. Keep
+  // credentials out of logs: URLs are reduced to origin + path and RPCs to host.
+  console.info('[Thetanuts API] SDK endpoint configuration', {
+    apiBaseUrl: safeUrl(client.apiBaseUrl),
+    indexerApiUrl: safeUrl(client.indexerApiUrl),
+    stateApiUrl: safeUrl(client.stateApiUrl),
+    pricingApiUrl: safeUrl(client.pricingApiUrl),
+    rpcHosts: parseRpcUrls(process.env.BASE_RPC_URL).map(safeRpcHost),
+  })
+
+  return client
 }
 
 export function describeFailure(source: string, reason: unknown) {
   const message = reason instanceof Error ? reason.message : String(reason)
   return `${source} could not be loaded: ${message}`
+}
+
+type UnknownRecord = Record<string, unknown>
+
+function asRecord(value: unknown): UnknownRecord | undefined {
+  return typeof value === 'object' && value !== null ? value as UnknownRecord : undefined
+}
+
+function safeUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value) return undefined
+  try {
+    const url = new URL(value)
+    return `${url.protocol}//${url.host}${url.pathname}`
+  } catch {
+    return value.slice(0, 512)
+  }
+}
+
+function safeRpcHost(value: string): string {
+  try { return new URL(value).host }
+  catch { return 'invalid-rpc-url' }
+}
+
+function redactAndLimit(value: unknown, depth = 0): unknown {
+  if (value === null || typeof value === 'boolean' || typeof value === 'number') return value
+  if (typeof value === 'string') return value.length > 2_000 ? `${value.slice(0, 2_000)}…[truncated]` : value
+  if (value instanceof Error) {
+    const error = value as Error & UnknownRecord
+    return {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+      errno: error.errno,
+      syscall: error.syscall,
+      hostname: error.hostname,
+      address: error.address,
+      port: error.port,
+      cause: redactAndLimit(error.cause, depth + 1),
+      errors: redactAndLimit(error.errors, depth + 1),
+    }
+  }
+  if (depth >= 3) return '[max-depth]'
+  if (Array.isArray(value)) return value.slice(0, 20).map((entry) => redactAndLimit(entry, depth + 1))
+
+  const record = asRecord(value)
+  if (!record) return String(value)
+  const secretKey = /authorization|cookie|token|secret|password|private.?key|api.?key/i
+  return Object.fromEntries(Object.entries(record).slice(0, 40).map(([key, entry]) => [
+    key,
+    secretKey.test(key) ? '[redacted]' : redactAndLimit(entry, depth + 1),
+  ]))
+}
+
+/**
+ * The SDK wraps Axios failures as ThetanutsError/APIError and puts the original
+ * transport error in `cause`. This log is deliberately server-only: callers
+ * still receive the existing concise `errors` strings from describeFailure().
+ */
+function logSourceFailure(source: string, error: unknown) {
+  const outer = asRecord(error)
+  const cause = outer?.cause
+  const causeRecord = asRecord(cause)
+  const response = asRecord(causeRecord?.response) ?? asRecord(outer?.response)
+  const config = asRecord(causeRecord?.config) ?? asRecord(outer?.config)
+  const request = asRecord(causeRecord?.request) ?? asRecord(outer?.request)
+  const meta = asRecord(outer?.meta)
+  const configuredUrl = typeof config?.url === 'string' ? config.url : undefined
+  const baseUrl = typeof config?.baseURL === 'string' ? config.baseURL : undefined
+  const resolvedUrl = configuredUrl && baseUrl ? new URL(configuredUrl, baseUrl).toString() : configuredUrl
+
+  const diagnostics = {
+    source,
+    errorClass: error instanceof Error ? error.name : typeof error,
+    message: error instanceof Error ? error.message : String(error),
+    sdkCode: outer?.code,
+    sdkStatus: outer?.status,
+    sdkMeta: redactAndLimit(meta),
+    cause: redactAndLimit(cause),
+    httpStatus: response?.status ?? outer?.status,
+    requestUrl: safeUrl(resolvedUrl ?? (typeof meta?.url === 'string' ? meta.url : undefined)),
+    requestMethod: config?.method,
+    requestTimeoutMs: config?.timeout,
+    responseBody: redactAndLimit(response?.data),
+    network: {
+      axiosCode: causeRecord?.code ?? outer?.code,
+      errno: causeRecord?.errno ?? outer?.errno,
+      syscall: causeRecord?.syscall ?? outer?.syscall,
+      hostname: causeRecord?.hostname ?? request?.host,
+      address: causeRecord?.address,
+      port: causeRecord?.port,
+    },
+  }
+  // JSON keeps nested AggregateError connection attempts visible in plain
+  // process logs instead of Node collapsing them to `[Array]`.
+  console.error('[Thetanuts API] source failure diagnostics', JSON.stringify(diagnostics))
 }
 
 function withTimeout<T>(source: string, request: Promise<T>): Promise<T> {
@@ -103,6 +209,7 @@ async function loadSource<T>(source: string, request: () => Promise<T>): Promise
     return value
   } catch (error) {
     console.error(`[Thetanuts API] ${source} failed`, error)
+    logSourceFailure(source, error)
     throw error
   }
 }

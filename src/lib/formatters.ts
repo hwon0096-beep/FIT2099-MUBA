@@ -55,6 +55,17 @@ export function formatExpiry(timestamp: bigint | string): string {
   }).format(date)} UTC`
 }
 
+/** Compact UTC expiry for space-constrained order tables. */
+export function formatCompactExpiry(timestamp: bigint | string): string {
+  const date = new Date(Number(timestamp) * 1000)
+  if (Number.isNaN(date.getTime())) return 'Unavailable'
+
+  return `${new Intl.DateTimeFormat('en-US', {
+    month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    hour12: false, timeZone: 'UTC',
+  }).format(date).replace(',', ' ·')} UTC`
+}
+
 export function formatTimestamp(timestamp: number | string | undefined): string {
   if (!timestamp) return 'Unavailable'
   const date = new Date(timestamp)

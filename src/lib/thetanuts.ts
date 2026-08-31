@@ -14,6 +14,7 @@ interface MarketData {
   prices: {
     ETH: number
     BTC: number
+    SOL?: number
   }
   metadata: {
     lastUpdated: number
@@ -45,6 +46,7 @@ export function resolveAssetPrice(asset: string, prices: MarketData['prices'] | 
   const upper = asset.trim().toUpperCase()
   if (upper.includes('ETH')) return prices.ETH
   if (upper.includes('BTC')) return prices.BTC
+  if (upper.includes('SOL')) return prices.SOL
   return undefined
 }
 
