@@ -174,6 +174,15 @@ export async function fetchRawOrders(): Promise<OrderWithSignature[]> {
   return loadSource('fetchOrders()', () => client.api.fetchOrders())
 }
 
+// client.api.getBookOption() hits Thetanuts' indexer (stateApiUrl), which — verified directly —
+// has the same missing-Access-Control-Allow-Origin issue as fetchOrders()'s apiBaseUrl, so
+// PortfolioPage.tsx can't call it from the browser either. Its response is already plain JSON
+// (strings/numbers/booleans, no bigints), so unlike /api/fill/orders this needs no marshalling.
+export async function fetchBookOption(optionAddress: string): Promise<unknown> {
+  const client = createReadOnlyClient()
+  return loadSource(`getBookOption(${optionAddress})`, () => client.api.getBookOption(optionAddress))
+}
+
 async function loadThetanutsDataUncached(): Promise<ThetanutsApiResponse> {
   const errors: string[] = []
   const data: ThetanutsApiResponse = { errors, fetchedAt: new Date().toISOString() }

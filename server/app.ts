@@ -1,5 +1,5 @@
 import express from 'express'
-import { fetchRawOrders, loadThetanutsData } from './thetanuts.js'
+import { fetchBookOption, fetchRawOrders, loadThetanutsData } from './thetanuts.js'
 
 // Builds the Express app without binding it to a port, so both the local dev
 // entrypoint (index.ts, listening on 8787 behind Vite's proxy) and the
@@ -51,6 +51,23 @@ export function createApp() {
       console.error('[Thetanuts API] /api/fill/orders failed', error)
       const message = error instanceof Error ? error.message : String(error)
       response.status(502).json({ error: `Thetanuts orders request failed: ${message}` })
+    }
+  })
+
+  // PortfolioPage.tsx's positions table: strike(s)/expiry/type/status/entry price for one
+  // already-deployed option contract, resolved server-side since client.api.getBookOption()
+  // isn't reachable directly from the browser (see fetchBookOption()'s comment in thetanuts.ts).
+  app.get('/api/portfolio/option/:address', async (request, response) => {
+    console.info('[Thetanuts API] GET /api/portfolio/option/:address', request.params.address)
+
+    try {
+      const detail = await fetchBookOption(request.params.address)
+      response.set('Cache-Control', 'no-store')
+      response.json(detail)
+    } catch (error) {
+      console.error('[Thetanuts API] /api/portfolio/option failed', error)
+      const message = error instanceof Error ? error.message : String(error)
+      response.status(502).json({ error: `Option lookup failed: ${message}` })
     }
   })
 

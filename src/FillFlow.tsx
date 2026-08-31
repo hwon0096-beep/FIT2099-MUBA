@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BrowserProvider, type Eip1193Provider, type JsonRpcSigner } from 'ethers'
+import type { BrowserProvider } from 'ethers'
 import {
   ThetanutsClient,
   ContractRevertError,
@@ -7,47 +7,14 @@ import {
   OrderExpiredError,
   ThetanutsError,
   OptionTypeEnum,
-  MemoryStorageProvider,
   type OrderWithSignature,
 } from '@thetanuts-finance/thetanuts-client'
 import { formatExpiry } from './lib/formatters'
-
-declare global {
-  interface Window {
-    ethereum?: Eip1193Provider & {
-      isMetaMask?: boolean
-      on?: (event: string, listener: (...args: unknown[]) => void) => void
-      removeListener?: (event: string, listener: (...args: unknown[]) => void) => void
-    }
-  }
-}
-
-const BASE_CHAIN_ID = 8453n
-const BASE_CHAIN_ID_HEX = '0x2105'
-const BASE_ADD_CHAIN_PARAMS = {
-  chainId: BASE_CHAIN_ID_HEX,
-  chainName: 'Base',
-  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: ['https://mainnet.base.org'],
-  blockExplorerUrls: ['https://basescan.org'],
-}
+import { isUserRejection, useWallet } from './lib/WalletContext'
 
 const STALE_PREVIEW_MS = 30_000
 
 type PreviewResult = ReturnType<ThetanutsClient['optionBook']['previewFillOrder']>
-
-type ConnectionState =
-  | { status: 'no-wallet' }
-  | { status: 'disconnected'; error?: string }
-  | { status: 'connecting' }
-  | { status: 'cancelled' }
-  | { status: 'connected'; provider: BrowserProvider; signer: JsonRpcSigner; address: string }
-
-type ChainState =
-  | { status: 'unknown' }
-  | { status: 'wrong'; message?: string }
-  | { status: 'switching' }
-  | { status: 'correct' }
 
 type OrdersState = { loading: boolean; orders: OrderWithSignature[] | null; error: string | null }
 
@@ -67,27 +34,6 @@ type TxState =
   | { phase: 'success'; hash: string }
   | { phase: 'cancelled' }
   | { phase: 'error'; message: string }
-
-/**
- * ethers wraps a rejected wallet popup as `{ code: 'ACTION_REJECTED' }`, but the
- * SDK's write methods (ensureAllowance/fillOrder) re-wrap every non-SDK error into
- * a ContractRevertError via mapContractError. The original ethers error survives as
- * `.cause`, so a rejection has to be detected there too, not just on the top-level code.
- */
-function isUserRejection(error: unknown): boolean {
-  const code = (error as { code?: unknown } | undefined)?.code
-  if (code === 'ACTION_REJECTED') return true
-  const cause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined
-  return (cause as { code?: unknown } | undefined)?.code === 'ACTION_REJECTED'
-}
-
-function getEip1193ErrorCode(error: unknown): number | undefined {
-  const e = error as { code?: unknown; info?: { error?: { code?: unknown } }; error?: { code?: unknown } } | undefined
-  const nested = e?.info?.error?.code ?? e?.error?.code
-  if (typeof nested === 'number') return nested
-  if (typeof e?.code === 'number') return e.code
-  return undefined
-}
 
 function describeFillError(error: unknown): string {
   if (error instanceof OrderExpiredError) return 'This order expired, please pick another.'
@@ -140,99 +86,13 @@ function watchForBroadcast(provider: BrowserProvider, onBroadcast: () => void): 
 }
 
 export default function FillFlow() {
-  const [connection, setConnection] = useState<ConnectionState>(() => (
-    typeof window !== 'undefined' && window.ethereum ? { status: 'disconnected' } : { status: 'no-wallet' }
-  ))
-  const [chain, setChain] = useState<ChainState>({ status: 'unknown' })
-  const [client, setClient] = useState<ThetanutsClient | null>(null)
+  const { connection, chain, client, connectWallet, switchToBase } = useWallet()
   const [ordersState, setOrdersState] = useState<OrdersState>({ loading: false, orders: null, error: null })
   const [selectedOrder, setSelectedOrder] = useState<OrderWithSignature | null>(null)
   const [amountInput, setAmountInput] = useState('')
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [previewState, setPreviewState] = useState<PreviewState>(null)
   const [txState, setTxState] = useState<TxState>({ phase: 'idle' })
-
-  const connectWallet = useCallback(async () => {
-    if (!window.ethereum) return
-    setConnection({ status: 'connecting' })
-    try {
-      const provider = new BrowserProvider(window.ethereum)
-      await provider.send('eth_requestAccounts', [])
-      const signer = await provider.getSigner()
-      const address = await signer.getAddress()
-      setConnection({ status: 'connected', provider, signer, address })
-    } catch (error) {
-      if (isUserRejection(error)) {
-        setConnection({ status: 'cancelled' })
-        return
-      }
-      setConnection({ status: 'disconnected', error: error instanceof Error ? error.message : 'Could not connect to MetaMask.' })
-    }
-  }, [])
-
-  // Check the connected chain, and keep watching for the user switching networks
-  // from inside MetaMask itself (not just via our own "Switch to Base" button).
-  useEffect(() => {
-    if (connection.status !== 'connected') {
-      setChain({ status: 'unknown' })
-      return
-    }
-    let cancelled = false
-    const recheck = async () => {
-      try {
-        const network = await connection.provider.getNetwork()
-        if (cancelled) return
-        setChain(network.chainId === BASE_CHAIN_ID ? { status: 'correct' } : { status: 'wrong' })
-      } catch {
-        if (!cancelled) setChain({ status: 'wrong' })
-      }
-    }
-    void recheck()
-    const onChainChanged = () => { void recheck() }
-    window.ethereum?.on?.('chainChanged', onChainChanged)
-    return () => {
-      cancelled = true
-      window.ethereum?.removeListener?.('chainChanged', onChainChanged)
-    }
-  }, [connection])
-
-  const switchToBase = useCallback(async () => {
-    if (connection.status !== 'connected') return
-    setChain({ status: 'switching' })
-    try {
-      await connection.provider.send('wallet_switchEthereumChain', [{ chainId: BASE_CHAIN_ID_HEX }])
-    } catch (error) {
-      if (getEip1193ErrorCode(error) === 4902) {
-        try {
-          await connection.provider.send('wallet_addEthereumChain', [BASE_ADD_CHAIN_PARAMS])
-          return
-        } catch (addError) {
-          setChain({ status: 'wrong', message: isUserRejection(addError) ? undefined : describeFillError(addError) })
-          return
-        }
-      }
-      setChain({ status: 'wrong', message: isUserRejection(error) ? undefined : describeFillError(error) })
-    }
-  }, [connection])
-
-  // Instantiate the SDK client once we're connected on the right chain.
-  useEffect(() => {
-    if (connection.status !== 'connected' || chain.status !== 'correct') {
-      setClient(null)
-      return
-    }
-    // ThetanutsClient always builds an RFQKeyManagerModule internally, even though
-    // this flow only ever uses OptionBook (fetchOrders/previewFillOrder/fillOrder).
-    // Without an explicit keyStorageProvider it throws InvalidKeyError in any
-    // browser context rather than defaulting to plaintext localStorage. We never
-    // call anything under client.rfqKeys, so an in-memory provider is a no-op here.
-    setClient(new ThetanutsClient({
-      chainId: 8453,
-      provider: connection.provider,
-      signer: connection.signer,
-      keyStorageProvider: new MemoryStorageProvider(),
-    }))
-  }, [connection, chain])
 
   const loadOrders = useCallback(async () => {
     if (!client) return
