@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { formatExpiry, formatUsd } from '../lib/formatters'
 import { buildPayoffFacts } from '../lib/orderPayoff'
 import type { ExplorerData, ExplorerOrder } from '../lib/thetanuts'
@@ -11,6 +12,8 @@ interface TradePreviewModalProps {
 }
 
 export default function TradePreviewModal({ order, marketData, onClose }: TradePreviewModalProps) {
+  const navigate = useNavigate()
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
     window.addEventListener('keydown', handleKeyDown)
@@ -39,9 +42,8 @@ export default function TradePreviewModal({ order, marketData, onClose }: TradeP
 
       <footer className="modal-footer">
         <button type="button" className="modal-cancel" onClick={onClose}>Cancel</button>
-        <button type="button" className="modal-confirm" disabled
-          title="This explorer is read-only — trade execution isn't wired up yet.">
-          Confirm Trade
+        <button type="button" className="modal-primary" onClick={() => { onClose(); navigate(`/analyze?order=${order.id}`) }}>
+          View Full Analysis
         </button>
       </footer>
     </div>

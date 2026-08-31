@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { formatExpiry, formatNumber, formatTimestamp, formatUsd, parseOrderNumber, parseStrikeList } from './lib/formatters'
 import { loadExplorerData, type ExplorerData, type ExplorerOrder } from './lib/thetanuts'
 import TradePreviewModal from './components/TradePreviewModal'
@@ -147,6 +148,7 @@ function OrdersPanel(props: OrdersPanelProps) {
 }
 
 function OrderRow({ order, onPreview }: { order: ExplorerOrder; onPreview: (order: ExplorerOrder) => void }) {
+  const navigate = useNavigate()
   return <tr><td><strong className="asset-name">{order.asset}</strong></td>
     <td><span className={`option-type ${order.optionType.toLowerCase()}`}>{order.optionType}</span></td>
     <td className="numeric">{order.strikes}</td><td>{formatExpiry(order.expiry)}</td>
@@ -157,11 +159,16 @@ function OrderRow({ order, onPreview }: { order: ExplorerOrder; onPreview: (orde
       (src/lib/spreadPayoff.ts) — both have payoff math and are eligible for the preview. 3+
       strikes (butterfly, condor/iron_condor/ranger — see server/thetanuts.ts's note on `strikes`)
       have no payoff math yet, so those rows stay hidden rather than showing a mispriced chart.
+      Same eligibility gates the Trade button — AnalyzePage.tsx deep-links via ?order=<id> using
+      this same ExplorerOrder shape, and can only build payoff facts for these same orders.
     */}
     <td>{(() => {
       const strikeCount = parseStrikeList(order.strikes).length
       return order.optionType !== 'UNKNOWN' && (strikeCount === 1 || strikeCount === 2) &&
-        <button type="button" className="preview-button" onClick={() => onPreview(order)}>Preview payoff</button>
+        <div className="action-buttons">
+          <button type="button" className="preview-button" onClick={() => onPreview(order)}>Preview payoff</button>
+          <button type="button" className="preview-button" onClick={() => navigate(`/analyze?order=${order.id}`)}>Trade</button>
+        </div>
     })()}</td>
   </tr>
 }
