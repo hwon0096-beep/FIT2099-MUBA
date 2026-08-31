@@ -10,7 +10,9 @@
     "check": "tsc -b && npm run check:server",
     "check:server": "tsc -p tsconfig.server.json --noEmit",
     "build": "npm run check && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "tsx start.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@thetanuts-finance/thetanuts-client": "^0.3.0",
@@ -29,6 +31,7 @@
     "concurrently": "^10.0.5",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
-    "vite": "^8.2.2"
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
   }
 }

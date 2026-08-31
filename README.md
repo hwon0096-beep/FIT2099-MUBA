@@ -26,7 +26,9 @@ npm run build
 
 ### Optional Base RPC
 
-The explorer defaults to Base's public RPC. For a more reliable demo, copy `.env.example` to `.env` and set `VITE_BASE_RPC_URL` to your Base mainnet RPC endpoint.
+The explorer defaults to Base's public RPC (`https://mainnet.base.org`), which throttles aggressively under real load. For a more reliable demo, copy `.env.example` to `.env` and set `BASE_RPC_URL` to your own Base mainnet RPC endpoint (e.g. from Alchemy or Infura).
+
+`BASE_RPC_URL` is read server-side only, by `server/thetanuts.ts` via plain `process.env` — it is **not** a `VITE_`-prefixed variable and is never bundled into the browser. It also accepts a comma-separated list (primary RPC first, then fallback(s)); if a request against the primary fails, the server retries once against the next URL before giving up on that source.
 
 ## Thetanuts integration
 

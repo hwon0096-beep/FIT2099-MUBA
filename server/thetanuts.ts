@@ -12,6 +12,8 @@ import { ethers } from 'ethers'
 const BASE_CHAIN_ID = 8453 as const
 const DEFAULT_BASE_RPC_URL = 'https://mainnet.base.org'
 const SOURCE_TIMEOUT_MS = 12_000
+const SOURCE_RETRY_DELAY_MS = 250
+const CACHE_TTL_MS = 12_000
 
 export interface ExplorerOrder {
   id: string
@@ -33,9 +35,36 @@ export interface ThetanutsApiResponse {
   fetchedAt: string
 }
 
+// BASE_RPC_URL may hold a comma-separated list (primary, then fallback(s)).
+// Blank/unset -> the public endpoint, same as before.
+function parseRpcUrls(raw: string | undefined): string[] {
+  const urls = (raw ?? '').split(',').map((url) => url.trim()).filter(Boolean)
+  return urls.length > 0 ? urls : [DEFAULT_BASE_RPC_URL]
+}
+
+// A single RPC URL failing (or the RPC_URL env var being unset) used to mean
+// silently going through the public mainnet.base.org endpoint on every single
+// request, which throttles under any real load. ethers.FallbackProvider is
+// ethers' own building block for exactly this: given multiple RPC URLs, it
+// dispatches by priority and moves on to the next on failure/timeout. quorum
+// is set to 1 explicitly (rather than relying on the default
+// ceil(providerCount / 2)) because this is meant as failover across
+// BASE_RPC_URL's list, not multi-node consensus — one healthy endpoint
+// responding should be enough, not a majority of them agreeing.
+function createProvider(): ethers.Provider {
+  const urls = parseRpcUrls(process.env.BASE_RPC_URL)
+  if (urls.length === 1) return new ethers.JsonRpcProvider(urls[0], BASE_CHAIN_ID)
+
+  const configs = urls.map((url, index) => ({
+    provider: new ethers.JsonRpcProvider(url, BASE_CHAIN_ID),
+    priority: index,
+  }))
+  return new ethers.FallbackProvider(configs, BASE_CHAIN_ID, { quorum: 1 })
+}
+
 function createReadOnlyClient() {
   console.info('[Thetanuts API] Creating read-only client')
-  const provider = new ethers.JsonRpcProvider(process.env.BASE_RPC_URL || DEFAULT_BASE_RPC_URL)
+  const provider = createProvider()
 
   return new ThetanutsClient({
     chainId: BASE_CHAIN_ID,
@@ -44,7 +73,7 @@ function createReadOnlyClient() {
   })
 }
 
-function describeFailure(source: string, reason: unknown) {
+export function describeFailure(source: string, reason: unknown) {
   const message = reason instanceof Error ? reason.message : String(reason)
   return `${source} could not be loaded: ${message}`
 }
@@ -78,7 +107,25 @@ async function loadSource<T>(source: string, request: () => Promise<T>): Promise
   }
 }
 
-function tokenSymbol(address: string | undefined, client: ThetanutsClient) {
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+// One transient failure (a dropped RPC call, a momentary 502 from Thetanuts'
+// API) used to kill that source for the whole request with no second chance.
+// Wraps loadSource rather than changing it: same timeout/logging behavior per
+// attempt, just tried twice before the source is recorded as failed.
+async function loadSourceWithRetry<T>(source: string, request: () => Promise<T>): Promise<T> {
+  try {
+    return await loadSource(source, request)
+  } catch (firstError) {
+    console.warn(`[Thetanuts API] ${source} failed once, retrying in ${SOURCE_RETRY_DELAY_MS}ms`, firstError)
+    await delay(SOURCE_RETRY_DELAY_MS)
+    return loadSource(source, request)
+  }
+}
+
+export function tokenSymbol(address: string | undefined, client: ThetanutsClient) {
   if (!address) return 'Unknown collateral'
 
   const token = Object.values(client.chainConfig.tokens).find(
@@ -88,7 +135,7 @@ function tokenSymbol(address: string | undefined, client: ThetanutsClient) {
   return token?.symbol ?? `${address.slice(0, 6)}…${address.slice(-4)}`
 }
 
-function normalizeOrder(orderWithSignature: OrderWithSignature, client: ThetanutsClient): ExplorerOrder {
+export function normalizeOrder(orderWithSignature: OrderWithSignature, client: ThetanutsClient): ExplorerOrder {
   const { order, rawApiData } = orderWithSignature
   const priceFeedSymbols = buildPriceFeedSymbolMap(BASE_CHAIN_ID)
   const priceFeed = rawApiData?.priceFeed.toLowerCase()
@@ -127,7 +174,7 @@ export async function fetchRawOrders(): Promise<OrderWithSignature[]> {
   return loadSource('fetchOrders()', () => client.api.fetchOrders())
 }
 
-export async function loadThetanutsData(): Promise<ThetanutsApiResponse> {
+async function loadThetanutsDataUncached(): Promise<ThetanutsApiResponse> {
   const errors: string[] = []
   const data: ThetanutsApiResponse = { errors, fetchedAt: new Date().toISOString() }
   let client: ThetanutsClient
@@ -141,9 +188,9 @@ export async function loadThetanutsData(): Promise<ThetanutsApiResponse> {
   }
 
   const [ordersResult, marketResult, statsResult] = await Promise.allSettled([
-    loadSource('fetchOrders()', () => client.api.fetchOrders()),
-    loadSource('getMarketData()', () => client.api.getMarketData()),
-    loadSource('getBookProtocolStats()', () => client.api.getBookProtocolStats()),
+    loadSourceWithRetry('fetchOrders()', () => client.api.fetchOrders()),
+    loadSourceWithRetry('getMarketData()', () => client.api.getMarketData()),
+    loadSourceWithRetry('getBookProtocolStats()', () => client.api.getBookProtocolStats()),
   ])
 
   if (ordersResult.status === 'fulfilled') data.orders = ordersResult.value.map((order) => normalizeOrder(order, client))
@@ -156,4 +203,31 @@ export async function loadThetanutsData(): Promise<ThetanutsApiResponse> {
   else errors.push(describeFailure('Live OptionBook protocol statistics', statsResult.reason))
 
   return data
+}
+
+// Short TTL cache in front of the real fetch: nothing here trades, so a few
+// seconds of staleness is fine, and it stops rapid/concurrent frontend
+// polling (or several browser tabs) from each re-hitting the SDK and RPC.
+// inFlightRequest additionally collapses concurrent callers that land while a
+// fetch is already in progress onto that same fetch, rather than each firing
+// their own. fetchRawOrders() (the fill flow) deliberately has none of this —
+// it backs real trade execution and must stay live.
+let cachedData: { value: ThetanutsApiResponse; expiresAt: number } | null = null
+let inFlightRequest: Promise<ThetanutsApiResponse> | null = null
+
+export async function loadThetanutsData(): Promise<ThetanutsApiResponse> {
+  const now = Date.now()
+  if (cachedData && cachedData.expiresAt > now) return cachedData.value
+  if (inFlightRequest) return inFlightRequest
+
+  inFlightRequest = loadThetanutsDataUncached()
+    .then((value) => {
+      cachedData = { value, expiresAt: Date.now() + CACHE_TTL_MS }
+      return value
+    })
+    .finally(() => {
+      inFlightRequest = null
+    })
+
+  return inFlightRequest
 }

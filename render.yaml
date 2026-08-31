@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: thetanuts-options-explorer
+    runtime: node
+    plan: free
+    # Render's docs don't clearly state whether `npm install` runs
+    # automatically before a custom buildCommand, so it's included
+    # explicitly here rather than assumed.
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      # Server-side Base mainnet RPC URL(s) read by server/thetanuts.ts
+      # (comma-separated for a primary + fallback list). Not set here —
+      # enter the real value in the Render dashboard for this service.
+      - key: BASE_RPC_URL
+        sync: false
