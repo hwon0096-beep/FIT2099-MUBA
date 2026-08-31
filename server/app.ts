@@ -1,5 +1,5 @@
 import express from 'express'
-import { fetchBookOption, fetchRawOrders, loadThetanutsData } from './thetanuts.js'
+import { fetchBookOption, fetchFillOrders, loadThetanutsData } from './thetanuts.js'
 
 // Builds the Express app without binding it to a port, so both the local dev
 // entrypoint (index.ts, listening on 8787 behind Vite's proxy) and the
@@ -42,7 +42,7 @@ export function createApp() {
     console.info('[Thetanuts API] GET /api/fill/orders')
 
     try {
-      const orders = await fetchRawOrders()
+      const orders = await fetchFillOrders()
       response.set('Cache-Control', 'no-store')
       response.type('application/json').send(JSON.stringify(orders, (_key, value) => (
         typeof value === 'bigint' ? { $bigint: value.toString() } : value

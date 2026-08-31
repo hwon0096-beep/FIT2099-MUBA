@@ -1,180 +1,44 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { formatExpiry, formatNumber, formatUsd, parseStrikeList } from '../lib/formatters'
-import { buildPayoffFacts } from '../lib/orderPayoff'
-import * as vanillaPayoff from '../lib/payoff'
-import * as spreadPayoff from '../lib/spreadPayoff'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Area, CartesianGrid, Line, LineChart, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { formatCompactExpiry, formatExpiry, formatNumber, formatUsd, parseOrderNumber, parseStrikeList } from '../lib/formatters'
+import * as payoff from '../lib/payoff'
 import { loadExplorerData, resolveAssetPrice, type ExplorerData, type ExplorerOrder } from '../lib/thetanuts'
-import PayoffPreviewBody, { type PayoffFacts } from '../components/PayoffPreviewBody'
+import '../styles/analyze.css'
+import '../styles/analyze-empty.css'
 
-/** Same eligibility rule as buildPayoffFacts (1 or 2 strikes, a known CALL/PUT side) — see orderPayoff.ts's comment on why 3+ strike structures have no payoff math yet. */
-function isEligible(order: ExplorerOrder): boolean {
-  if (order.optionType === 'UNKNOWN') return false
-  const strikeCount = parseStrikeList(order.strikes).length
-  return strikeCount === 1 || strikeCount === 2
-}
+const SCENARIOS = [-20, -10, -5, 0, 5, 10, 20]
+const nativePremiumIsUsd = (order: ExplorerOrder) => order.collateral === 'USDC'
 
-/** Plain-English readout of the same payoff math PayoffPreviewBody/RiskSummary use — calls the same lib/payoff.ts and lib/spreadPayoff.ts functions rather than re-deriving breakeven/max-loss/max-gain. Figures are per contract (position size 1), matching PayoffPreviewBody's own initial position size. */
-function explainerLines(order: ExplorerOrder, payoff: PayoffFacts): string[] {
-  if (payoff.kind === 'vanilla') {
-    const breakeven = vanillaPayoff.breakevenPrice(payoff.optionType, payoff.strike, payoff.premium)
-    const maxLoss = vanillaPayoff.maxLossTotal(payoff.premium, 1)
-    const action = payoff.optionType === 'CALL' ? 'buy' : 'sell'
-    const direction = payoff.optionType === 'CALL' ? 'above' : 'below'
-
-    return [
-      `This ${payoff.optionType} gives the holder the right — not the obligation — to ${action} ${order.asset} at ${formatUsd(payoff.strike)} at expiry.`,
-      `It breaks even if ${order.asset} settles at ${formatUsd(breakeven)} at expiry — ${direction} that price, the position is profitable.`,
-      `Because this is a long position, the most it can lose is the ${formatUsd(maxLoss)} premium paid per contract, no matter how far the price moves against it.`,
-    ]
-  }
-
-  const breakeven = spreadPayoff.breakevenPrice(payoff.spreadType, payoff.nearStrike, payoff.premium)
-  const maxLoss = spreadPayoff.maxLossTotal(payoff.premium, 1)
-  const maxGain = spreadPayoff.maxGainTotal(payoff.nearStrike, payoff.farStrike, payoff.premium, 1)
-  const isCallSpread = payoff.spreadType === 'CALL_SPREAD'
-  const action = isCallSpread ? 'buy' : 'sell'
-  const direction = isCallSpread ? 'above' : 'below'
-  const capDirection = isCallSpread ? 'rises to' : 'falls to'
-
-  return [
-    `This ${order.optionType} SPREAD gives the holder the right — not the obligation — to ${action} ${order.asset} at ${formatUsd(payoff.nearStrike)} at expiry, with gains capped once the price ${capDirection} ${formatUsd(payoff.farStrike)}.`,
-    `It breaks even if ${order.asset} settles at ${formatUsd(breakeven)} at expiry — ${direction} that price (up to the cap), the position is profitable.`,
-    `The most it can lose is the ${formatUsd(maxLoss)} premium paid per contract; the most it can gain is capped at ${formatUsd(maxGain)} per contract.`,
-  ]
-}
+function Token({ asset }: { asset: string }) { const symbol = asset.toUpperCase(); const paths = symbol === 'ETH' ? <><path d="M12 2 6 12l6 3 6-3-6-10Z" /><path d="m12 16-6-3 6 9 6-9-6 3Z" opacity=".7" /></> : symbol === 'SOL' ? <><path d="M6 5h12l-3 3H3l3-3Z" /><path d="M18 11H6l3-3h12l-3 3Z" opacity=".8" /><path d="M6 17h12l-3 3H3l3-3Z" /></> : symbol === 'BNB' ? <><path d="m12 3 3 3-3 3-3-3 3-3Zm-5 5 3 3-3 3-3-3 3-3Zm10 0 3 3-3 3-3-3 3-3Zm-5 5 3 3-3 3-3-3 3-3Z" /><path d="m12 8 4 4-4 4-4-4 4-4Z" opacity=".8" /></> : symbol === 'XRP' ? <><path d="M5 6h3l3 3c.6.6 1.5.6 2.1 0l3-3h3l-4.3 4.3a3.8 3.8 0 0 1-5.4 0L5 6Z" /><path d="M5 18h3l3-3c.6-.6 1.5-.6 2.1 0l3 3h3l-4.3-4.3a3.8 3.8 0 0 0-5.4 0L5 18Z" /></> : symbol === 'AVAX' ? <><path d="M12 3 20 8v8l-8 5-8-5V8l8-5Z" opacity=".35" /><path d="m12 6-4 8h3l1-2 1 2h3l-4-8Z" /></> : <><path d="M9 4h5c3 0 4 1 4 3 0 1-.6 2-1.7 2.5 1.5.4 2.4 1.5 2.4 3.2 0 2-1.8 3.4-4.7 3.4H9V4Zm3 2v2.4h1.7c.8 0 1.3-.4 1.3-1.2S14.5 6 13.7 6H12Zm0 4.5v3h2c1 0 1.6-.5 1.6-1.5s-.6-1.5-1.6-1.5H12Z" /><path d="M10 2v17M14 2v17" fill="none" stroke="currentColor" strokeWidth="1" /></>; return <svg className="analyze-token-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{paths}</svg> }
 
 export default function AnalyzePage() {
-  const [data, setData] = useState<ExplorerData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [deepLinkMissing, setDeepLinkMissing] = useState(false)
-  const [searchParams, setSearchParams] = useSearchParams()
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    loadExplorerData()
-      .then((result) => { if (!cancelled) setData(result) })
-      .catch((reason: unknown) => {
-        console.error('[Thetanuts Analyze] Explorer data loading failed', reason)
-        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Unable to load live analysis data.')
-      })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [])
-
-  const eligibleOrders = useMemo(() => (data?.orders ?? []).filter(isEligible), [data?.orders])
-
-  // Pre-select ?order=<id> once orders load, tried exactly once — later manual
-  // selections (which also update the URL, see handleSelect) must not be
-  // overwritten by this running again.
-  const appliedDeepLink = useRef(false)
-  useEffect(() => {
-    if (appliedDeepLink.current || !data?.orders) return
-    appliedDeepLink.current = true
-    const requestedId = searchParams.get('order')
-    if (!requestedId) return
-    const match = eligibleOrders.find((order) => order.id === requestedId)
-    if (match) setSelectedId(match.id)
-    else setDeepLinkMissing(true)
-  }, [data?.orders, eligibleOrders, searchParams])
-
-  const selectedOrder = eligibleOrders.find((order) => order.id === selectedId) ?? null
-  const payoff: PayoffFacts | null = selectedOrder ? buildPayoffFacts(selectedOrder, data?.marketData) : null
-  const spotPrice = selectedOrder ? resolveAssetPrice(selectedOrder.asset, data?.marketData?.prices) : undefined
-
-  const handleSelect = (id: string) => {
-    setDeepLinkMissing(false)
-    setSelectedId(id || null)
-    setSearchParams(id ? { order: id } : {}, { replace: true })
-  }
-
-  return (
-    <main className="app-shell">
-      <header className="hero">
-        <div className="hero-copy">
-          <p className="eyebrow">THETANUTS FINANCE × BASE</p>
-          <h1>Analyze a trade</h1>
-          <p className="intro">Pick a live OptionBook order and see its full payoff chart, breakeven, and risk before you trade.</p>
-        </div>
-      </header>
-
-      {error && <section className="notice error-notice" role="alert">
-        <strong>We couldn't load live analysis data.</strong>
-        <p>{error} Please check the server connection and try again.</p>
-      </section>}
-
-      <section className="section order-section" aria-labelledby="picker-heading">
-        <div className="section-heading">
-          <div><p className="eyebrow">PICK AN ORDER</p><h2 id="picker-heading">Choose a trade to analyze</h2></div>
-        </div>
-
-        {loading && !data && <div className="empty-state"><span className="loader" />Loading a live order…</div>}
-        {!loading && eligibleOrders.length === 0 && <div className="empty-state">No orders available to analyze right now.</div>}
-        {deepLinkMissing && <div className="empty-state">The linked order isn't available in the live book right now — pick another one below.</div>}
-
-        {eligibleOrders.length > 0 && (
-          <label className="modal-field modal-field-wide">
-            <span>Order</span>
-            <select value={selectedId ?? ''} onChange={(event) => handleSelect(event.target.value)}>
-              <option value="" disabled>Select an order…</option>
-              {eligibleOrders.map((order) => (
-                <option key={order.id} value={order.id}>
-                  {order.asset} {order.optionType}{parseStrikeList(order.strikes).length === 2 ? ' SPREAD' : ''} · {order.strikes} · {formatExpiry(order.expiry)}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-      </section>
-
-      {selectedOrder && payoff && <>
-        <SelectedTradeCard order={selectedOrder} payoff={payoff} spotPrice={spotPrice} />
-        <ExplainerBox order={selectedOrder} payoff={payoff} />
-        <section className="section order-section" aria-labelledby="payoff-heading">
-          <div className="section-heading">
-            <div><p className="eyebrow">PAYOFF ANALYSIS</p><h2 id="payoff-heading">Chart, risk, and scenarios</h2></div>
-          </div>
-          <PayoffPreviewBody payoff={payoff} />
-        </section>
-      </>}
-    </main>
-  )
+  const navigate = useNavigate(), [params] = useSearchParams(), [data, setData] = useState<ExplorerData | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState<string | null>(null), [selected, setSelected] = useState<string | null>(null), applied = useRef(false)
+  useEffect(() => { let live = true; loadExplorerData().then(result => { if (live) setData(result) }).catch(reason => { if (live) setError(reason instanceof Error ? reason.message : 'Unable to load live analysis data.') }).finally(() => { if (live) setLoading(false) }); return () => { live = false } }, [])
+  const orders = data?.orders ?? []
+  useEffect(() => { if (!applied.current && orders.length) { applied.current = true; const requestedId = params.get('order'); const recentId = sessionStorage.getItem('nutscope:last-analyzed-order'); const id = requestedId ?? recentId; if (id && orders.some(order => order.id === id)) { setSelected(id); sessionStorage.setItem('nutscope:last-analyzed-order', id) } else if (!requestedId) sessionStorage.removeItem('nutscope:last-analyzed-order') } }, [orders, params])
+  const order = orders.find(item => item.id === selected) ?? null
+  return <main className="analyze-page"><div className="analyze-shell"><header className="analyze-heading"><div><h1>Analyze <em>Trade</em></h1><p>Understand the risk and expiry outcome of {order ? 'this' : 'a'} live OptionBook order.</p></div><button type="button" onClick={() => navigate('/markets')}>← Back to Markets</button></header>{error && <div className="analyze-notice">{error}</div>}{!order ? <AnalyzeEmpty onBrowse={() => navigate('/markets')} loading={loading} /> : <TradeAnalysis order={order} marketData={data?.marketData} />}</div></main>
 }
 
-function SelectedTradeCard({ order, payoff, spotPrice }: { order: ExplorerOrder; payoff: PayoffFacts; spotPrice: number | undefined }) {
-  const badgeLabel = payoff.kind === 'spread' ? `${order.optionType} SPREAD` : order.optionType
+function AnalyzeEmpty({ onBrowse, loading }: { onBrowse: () => void; loading: boolean }) { const features = [['↗', 'Payoff at Expiry', 'Visualize profit and loss across possible expiry prices.'], ['◈', 'Risk Summary', 'See max loss, break-even, premium and potential upside.'], ['▤', 'Scenario Analysis', 'Compare outcomes across different underlying prices.'], ['✦', 'Plain-English Explanation', 'Understand what the option means without advanced options knowledge.'], ['◷', 'Time to Expiry', 'See how long remains until the live order expires.']]; return <section className="analyze-empty-state"><p className="analyze-kicker">ANALYZE LIVE OPTIONS</p><h2>Analyze Trade</h2><p>Understand the risk and payoff of a live Thetanuts OptionBook order before you trade.</p><button type="button" onClick={onBrowse}>Browse Live Markets <span>→</span></button>{loading && <small>Checking the live OptionBook…</small>}<div><h3>What you'll get</h3><section>{features.map(([icon, title, description]) => <article key={title}><i>{icon}</i><strong>{title}</strong><span>{description}</span></article>)}</section></div></section> }
 
-  return <section className="section order-section" aria-labelledby="selected-trade-heading">
-    <div className="section-heading">
-      <div><p className="eyebrow">SELECTED TRADE</p><h2 id="selected-trade-heading">{order.asset} {badgeLabel}</h2></div>
-    </div>
-    <div className="metric-grid">
-      <Metric label="Asset" value={order.asset} hint="Underlying" />
-      <Metric label="Option type" value={<span className={`option-type ${order.optionType.toLowerCase()}`}>{badgeLabel}</span>} hint={payoff.kind === 'spread' ? 'Vertical spread' : 'Vanilla'} />
-      <Metric label="Strike(s)" value={order.strikes} hint="8-decimal strike price" />
-      <Metric label="Expiry" value={formatExpiry(order.expiry)} hint="Settlement time" />
-      <Metric label="Current spot" value={formatUsd(spotPrice)} hint="Thetanuts market data" />
-      <Metric label="Premium" value={<>{formatNumber(order.pricePerContract, 6)} <span className="unit">{order.collateral}</span></>} hint="Per contract" />
-      <Metric label="Order type" value="Buy to Open" hint="Taker fills the maker's order" />
-    </div>
-  </section>
+function TradeAnalysis({ order, marketData }: { order: ExplorerOrder; marketData: ExplorerData['marketData'] }) {
+  const strikes = parseStrikeList(order.strikes), spot = resolveAssetPrice(order.asset, marketData?.prices), premium = parseOrderNumber(order.pricePerContract), single = strikes.length === 1 && order.optionType !== 'UNKNOWN', type = order.optionType === 'CALL' ? 'CALL' : 'PUT', safe = single && nativePremiumIsUsd(order) && spot !== undefined
+  const calc = useMemo(() => safe ? compute(type, strikes[0], premium, spot!) : null, [safe, type, premium, spot, order.strikes])
+  const [tab, setTab] = useState<'overview' | 'scenario'>('overview')
+  const navigate = useNavigate()
+  return <div className="analyze-layout"><aside><TradeCard order={order} spot={spot} strikes={strikes} type={type} single={single} /><Meaning order={order} strike={strikes[0]} type={type} premium={premium} safe={safe} spot={spot} /></aside><section className="analyze-main"><button className="analyze-continue" type="button" onClick={() => navigate(`/trade?order=${encodeURIComponent(order.id)}`)}>Continue to Trade →</button>{calc ? <><Diagram asset={order.asset} calc={calc} /><Risks calc={calc} order={order} /><section className="analyze-card analysis-tabs"><div className="analysis-tab-list" role="tablist" aria-label="Analysis detail"><button type="button" role="tab" aria-selected={tab === 'overview'} className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>Overview</button><button type="button" role="tab" aria-selected={tab === 'scenario'} className={tab === 'scenario' ? 'active' : ''} onClick={() => setTab('scenario')}>Scenario Analysis</button></div>{tab === 'overview' ? <Overview order={order} calc={calc} /> : <ScenarioTable asset={order.asset} calc={calc} />}</section></> : <Unsupported order={order} single={single} />}</section></div>
 }
 
-function ExplainerBox({ order, payoff }: { order: ExplorerOrder; payoff: PayoffFacts }) {
-  const lines = explainerLines(order, payoff)
-  return <section className="section order-section" aria-labelledby="explainer-heading">
-    <div className="section-heading">
-      <div><p className="eyebrow">WHAT THIS MEANS</p><h2 id="explainer-heading">In plain English</h2></div>
-    </div>
-    <ul className="explainer-list">
-      {lines.map((line) => <li key={line}>{line}</li>)}
-    </ul>
-  </section>
-}
-
-function Metric({ label, value, hint }: { label: string; value: React.ReactNode; hint: string }) {
-  return <article className="metric-card"><span>{label}</span><strong>{value}</strong><small>{hint}</small></article>
-}
+function TradeCard({ order, spot, strikes, type, single }: { order: ExplorerOrder; spot?: number; strikes: number[]; type: 'CALL' | 'PUT'; single: boolean }) { return <section className="analyze-card selected-card"><header><h2>Selected Trade</h2>{single && <span className={type === 'CALL' ? 'bullish' : 'bearish'}>{type === 'CALL' ? 'Bullish' : 'Bearish'}</span>}</header><div className="analyze-asset"><i className={order.asset.toLowerCase()}><Token asset={order.asset} /></i><div><b>{order.asset}</b><small>{single ? (type === 'CALL' ? 'Call' : 'Put') : 'Multi-leg order'}</small></div><strong className={`analyze-type ${type.toLowerCase()}`}>{single ? type : 'MULTI-LEG'}</strong></div><dl><Pair label={single ? 'Strike' : 'Strikes'} value={order.strikes} /><Pair label="Spot price" value={formatUsd(spot)} /><Pair label="Expiry" value={formatExpiry(order.expiry)} /><Pair label="Premium" value={`${formatNumber(order.pricePerContract, 6)} ${order.collateral}`} /><Pair label="Available amount" value={formatNumber(order.availableAmount, 4)} /><Pair label="Order ID" value={`${order.id.slice(0, 12)}…`} /></dl></section> }
+function Meaning({ order, strike, type, premium, safe, spot }: { order: ExplorerOrder; strike: number; type: 'CALL' | 'PUT'; premium: number; safe: boolean; spot?: number }) { const action = type === 'CALL' ? 'buy' : 'sell', direction = type === 'CALL' ? 'rises above' : 'falls below', breakeven = type === 'CALL' ? strike + premium : strike - premium; return <section className="analyze-card analyze-meaning"><h2>What this means</h2><p>You are looking at an {order.asset} {type.toLowerCase()} with a strike price of {formatUsd(strike)}.</p><p>If you take this order as the option buyer, you pay {formatNumber(order.pricePerContract, 6)} {order.collateral} for the right to {action} at expiry on {formatExpiry(order.expiry)}.</p>{safe ? <><p>At expiry, the position begins making a net profit if {order.asset} {direction} approximately {formatUsd(breakeven)}.</p><p>If the option expires worthless, loss is limited to the {formatNumber(premium, 6)} USDC premium. Current spot is {formatUsd(spot)}.</p></> : <p>The premium is shown in its native denomination. USD payoff is withheld unless the premium and underlying values are safely comparable.</p>}</section> }
+function compute(type: 'CALL' | 'PUT', strike: number, premium: number, spot: number) { const inputs: payoff.PayoffInputs = { optionType: type, strike, premium, positionSize: 1, currentPrice: spot }, curve = payoff.buildPayoffCurve(inputs, .35, 71), breakeven = payoff.breakevenPrice(type, strike, premium); return { type, strike, premium, spot, curve, breakeven, maxProfit: type === 'CALL' ? undefined : Math.max(0, strike - premium), rows: SCENARIOS.map(change => { const price = spot * (1 + change / 100), pnl = payoff.netPnlAtExpiry(inputs, price); return { change, price, pnl, returnPct: pnl / premium * 100 } }) } }
+function Diagram({ asset, calc }: { asset: string; calc: ReturnType<typeof compute> }) { const vals = calc.curve.map(point => point.pnl), min = Math.min(0, ...vals), max = Math.max(0, ...vals); return <section className="analyze-card payoff-diagram"><header><div><h2>Payoff Diagram at Expiry</h2><p>Illustrative payoff for taking this order as the option buyer.</p></div><span>At expiry</span></header><div className="payoff-markers"><span className="spot">Spot {formatUsd(calc.spot)}</span><span className="strike">Strike {formatUsd(calc.strike)}</span><span className="breakeven">Break-even {formatUsd(calc.breakeven)}</span></div><ResponsiveContainer width="100%" height={244}><LineChart data={calc.curve}><CartesianGrid stroke="#1e3445" strokeDasharray="3 4" vertical={false} /><XAxis dataKey="price" type="number" tickFormatter={value => formatUsd(value, 0)} tick={{ fill: '#9dadbd', fontSize: 11 }} /><YAxis tickFormatter={value => formatUsd(value, 0)} tick={{ fill: '#9dadbd', fontSize: 11 }} width={72} /><Tooltip formatter={value => [formatUsd(Number(value)), 'Net P&L']} contentStyle={{ background: '#0a1725', border: '1px solid #29445a', borderRadius: 8 }} /><ReferenceArea y1={0} y2={max} fill="#19d7b4" fillOpacity={.08} /><ReferenceArea y1={min} y2={0} fill="#ff3e7f" fillOpacity={.08} /><ReferenceLine y={0} stroke="#c3ced8" /><ReferenceLine x={calc.strike} stroke="#ffad36" strokeDasharray="4 4" /><ReferenceLine x={calc.breakeven} stroke="#b77cff" strokeDasharray="4 4" /><ReferenceLine x={calc.spot} stroke="#2be4c7" strokeDasharray="4 4" /><Area dataKey="pnl" fill="#2be4c7" fillOpacity={.05} stroke="none" /><Line type="linear" dataKey="pnl" stroke="#2be4c7" strokeWidth={3} dot={false} isAnimationActive={false} /></LineChart></ResponsiveContainer><small>{asset} price at expiry (USD) · Net P&amp;L (USD)</small></section> }
+function Overview({ order, calc }: { order: ExplorerOrder; calc: ReturnType<typeof compute> }) { const isCall = calc.type === 'CALL'; return <div className="analysis-overview"><article><span>Buyer assumption</span><strong>Long {isCall ? 'Call' : 'Put'}</strong><p>You pay the live order premium to open the position.</p></article><article><span>Profit condition</span><strong>{isCall ? 'Expiry above' : 'Expiry below'} {formatUsd(calc.breakeven)}</strong><p>Net P&amp;L becomes positive beyond the break-even level.</p></article><article><span>Loss condition</span><strong>Premium at risk</strong><p>Maximum loss is limited to {formatNumber(calc.premium, 6)} USDC per contract.</p></article><article><span>Expiry status</span><strong>{timeLeft(Number(order.expiry) * 1000 - Date.now())}</strong><p>{formatCompactExpiry(order.expiry)} · payoff settles at expiry.</p></article></div> }
+function Risks({ calc, order }: { calc: ReturnType<typeof compute>; order: ExplorerOrder }) { const remaining = Number(order.expiry) * 1000 - Date.now(); return <div className="analyze-risk"><Risk label="Max loss" value={`${formatNumber(calc.premium, 6)} USDC`} hint="Premium per contract" /><Risk label="Break-even price" value={formatUsd(calc.breakeven)} hint={calc.type === 'CALL' ? 'Strike + premium' : 'Strike − premium'} /><Risk label="Cost / premium" value={`${formatNumber(calc.premium, 6)} USDC`} hint="Per contract" /><Risk label="Potential upside" value={calc.maxProfit === undefined ? 'Unlimited' : formatUsd(calc.maxProfit)} hint={calc.maxProfit === undefined ? 'Long call at expiry' : 'If underlying reaches zero'} /><Risk label="Time to expiry" value={timeLeft(remaining)} hint={formatCompactExpiry(order.expiry)} /></div> }
+function ScenarioTable({ asset, calc }: { asset: string; calc: ReturnType<typeof compute> }) { return <section className="scenario-card"><table><thead><tr><th>{asset} price change</th><th>Price at expiry</th><th>Net P&amp;L</th><th>Return on premium</th></tr></thead><tbody>{calc.rows.map(row => <tr key={row.change} className={row.change === 0 ? 'current' : ''}><td>{row.change === 0 ? 'Current' : `${row.change > 0 ? '+' : ''}${row.change}%`}</td><td>{formatUsd(row.price)}</td><td className={row.pnl >= 0 ? 'profit' : 'loss'}>{row.pnl >= 0 ? '+' : ''}{formatUsd(row.pnl)}</td><td className={row.pnl >= 0 ? 'profit' : 'loss'}>{row.returnPct >= 0 ? '+' : ''}{formatNumber(row.returnPct, 1)}%</td></tr>)}</tbody></table></section> }
+function Unsupported({ order, single }: { order: ExplorerOrder; single: boolean }) { return <section className="analyze-card analyze-unsupported"><h2>Payoff analysis unavailable</h2><p>{!single ? 'Detailed payoff analysis is currently available for single-leg Call and Put orders. This live order contains multiple legs whose direction cannot be safely reconstructed from the available data.' : `This order premium is denominated in ${order.collateral}. A compatible live USD conversion is not available, so USD break-even and P&L are not shown.`}</p><dl><Pair label="Premium" value={`${formatNumber(order.pricePerContract, 6)} ${order.collateral}`} /><Pair label="Strike(s)" value={order.strikes} /><Pair label="Expiry" value={formatExpiry(order.expiry)} /></dl></section> }
+function Pair({ label, value }: { label: string; value: string }) { return <div><dt>{label}</dt><dd>{value}</dd></div> }
+function Risk({ label, value, hint }: { label: string; value: string; hint: string }) { return <article><span>{label}</span><b>{value}</b><small>{hint}</small></article> }
+function timeLeft(value: number) { if (value <= 0) return 'Expired'; const hours = Math.floor(value / 3_600_000), days = Math.floor(hours / 24); return days ? `${days}d ${hours % 24}h` : `${hours}h ${Math.floor(value / 60_000) % 60}m` }

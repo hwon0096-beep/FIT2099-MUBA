@@ -281,6 +281,13 @@ export async function fetchRawOrders(): Promise<OrderWithSignature[]> {
   return loadSource('fetchOrders()', () => client.api.fetchOrders())
 }
 
+/** Raw signed orders paired with the same stable IDs used by Markets/Analyze. */
+export async function fetchFillOrders(): Promise<Array<{ id: string; order: OrderWithSignature }>> {
+  const client = createReadOnlyClient()
+  const orders = await loadSource('fetchOrders()', () => client.api.fetchOrders())
+  return orders.map((order) => ({ id: normalizeOrder(order, client).id, order }))
+}
+
 // client.api.getBookOption() hits Thetanuts' indexer (stateApiUrl), which — verified directly —
 // has the same missing-Access-Control-Allow-Origin issue as fetchOrders()'s apiBaseUrl, so
 // PortfolioPage.tsx can't call it from the browser either. Its response is already plain JSON
