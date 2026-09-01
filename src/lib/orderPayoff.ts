@@ -1,4 +1,5 @@
 import type { PayoffFacts } from '../components/PayoffPreviewBody'
+export type { PayoffFacts } from '../components/PayoffPreviewBody'
 import { parseOrderNumber, parseStrikeList } from './formatters'
 import { resolveAssetPrice, type ExplorerData, type ExplorerOrder } from './thetanuts'
 
