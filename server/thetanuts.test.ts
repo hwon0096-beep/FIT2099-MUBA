@@ -194,4 +194,34 @@ describe('loadThetanutsData error aggregation', () => {
     expect(result.marketData).toBeDefined()
     expect(getMarketData).toHaveBeenCalledTimes(2)
   })
+
+  // A source that never settles (a hung RPC/HTTP call) must still be bounded by
+  // the per-source 12s timeout rather than hanging loadThetanutsData() forever.
+  // Fake timers turn the real 2x12s (attempt + one retry) into an instant test.
+  it('times out a source that never resolves, after both attempts, without hanging', async () => {
+    vi.useFakeTimers()
+    try {
+      fetchOrders.mockResolvedValue([])
+      getMarketData.mockImplementation(() => new Promise(() => {}))
+      getBookProtocolStats.mockResolvedValue({
+        stats: { totalVolumeUsd: '0', totalPremiumUsd: '0', totalPositions: 0, '24h': { positions: 0 } },
+      })
+
+      const { loadThetanutsData } = await import('./thetanuts.js')
+      const pending = loadThetanutsData()
+
+      await vi.advanceTimersByTimeAsync(12_000) // first attempt's timeout fires
+      await vi.advanceTimersByTimeAsync(250) // retry delay
+      await vi.advanceTimersByTimeAsync(12_000) // retried attempt's timeout fires
+
+      const result = await pending
+      expect(result.marketData).toBeUndefined()
+      expect(result.orders).toEqual([])
+      expect(result.protocolStats).toBeDefined()
+      expect(result.errors).toEqual(['Live market data could not be loaded: getMarketData() timed out after 12 seconds'])
+      expect(getMarketData).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

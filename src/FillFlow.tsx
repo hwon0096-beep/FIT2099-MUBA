@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Line, LineChart, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from 'recharts'
-import { ContractRevertError, OrderExpiredError, ThetanutsError, type OrderWithSignature } from '@thetanuts-finance/thetanuts-client'
+import { ContractRevertError, OrderExpiredError, ThetanutsError, type OrderWithSignature, type ThetanutsClient } from '@thetanuts-finance/thetanuts-client'
 import { formatCompactExpiry, formatExpiry, formatNumber, formatUsd, parseOrderNumber, parseStrikeList } from './lib/formatters'
 import { loadExplorerData, resolveAssetPrice, type ExplorerOrder } from './lib/thetanuts'
 import * as payoff from './lib/payoff'
@@ -9,8 +9,13 @@ import { isUserRejection, truncateAddress, useWallet } from './lib/WalletContext
 import type { BrowserProvider } from 'ethers'
 import './styles/trade.css'
 
-type Entry={id:string;order:OrderWithSignature}; type Preview={amount:bigint;numContracts:bigint;pricePerContract:bigint;totalCollateral:bigint;collateralToken:string}; type Phase='idle'|'approving'|'approved'|'signing'|'success'|'cancelled'|'error'
+type Entry={id:string;order:OrderWithSignature}; export type Preview={amount:bigint;numContracts:bigint;pricePerContract:bigint;totalCollateral:bigint;collateralToken:string}; type Phase='idle'|'approving'|'approved'|'signing'|'success'|'cancelled'|'error'
 const unpack=(text:string):Entry[]=>JSON.parse(text,(_k,v)=>v&&typeof v==='object'&&'$bigint'in v?BigInt((v as {$bigint:string}).$bigint):v)
+// The `amount` this returns is exactly what approve() and fill() below pass on to
+// ensureAllowance()/fillOrder() — pulled out as a pure function (no React state)
+// so "approval amount == fill amount, parsed from user input, never unbounded" is
+// unit-testable without mounting the component.
+export function computeFillPreview(client:ThetanutsClient,amountText:string,order:OrderWithSignature):Preview{const amount=client.utils.toBigInt(amountText||'0',client.chainConfig.tokens.USDC.decimals);if(amount<=0n)throw new Error('Enter a USDC amount greater than 0.');return{amount,...client.optionBook.previewFillOrder(order,amount)}}
 const describe=(e:unknown)=>e instanceof OrderExpiredError?'This live order has expired.':e instanceof ContractRevertError?'This live order is no longer available.':e instanceof ThetanutsError||e instanceof Error?e.message:'The transaction could not be completed.'
 function watchBroadcast(provider:BrowserProvider,onBroadcast:()=>void){let pending:number|null=null;const listener=(value:unknown)=>{const info=value as {action?:string;payload?:unknown;result?:unknown};if(info.action==='sendRpcPayload'){const payloads=Array.isArray(info.payload)?info.payload:[info.payload];const item=(payloads as {id?:number;method?:string}[]).find(x=>x?.method==='eth_sendTransaction');if(item?.id!==undefined)pending=item.id}else if(info.action==='receiveRpcResult'&&pending!==null){const results=Array.isArray(info.result)?info.result:[info.result];const item=(results as {id?:number;error?:unknown}[]).find(x=>x?.id===pending);if(item&&!item.error){onBroadcast();pending=null}}};provider.on('debug',listener);return()=>provider.off('debug',listener)}
 
@@ -19,7 +24,7 @@ export default function FillFlow(){
  useEffect(()=>{if(!id)return;let live=true;void loadExplorerData().then(d=>{const found=d.orders?.find(x=>x.id===id)??null;if(live){setOrder(found);setSpot(found?resolveAssetPrice(found.asset,d.marketData?.prices):undefined);setStale(!found)}}).catch(()=>live&&setStale(true)).finally(()=>live&&setLoading(false));return()=>{live=false}},[id])
  const revalidate=useCallback(async()=>{if(!id)return null;try{const r=await fetch('/api/fill/orders');if(!r.ok)throw new Error('Unable to refresh this live order.');const found=unpack(await r.text()).find(x=>x.id===id)?.order??null;setRaw(found);setStale(!found);return found}catch(e){setMessage(e instanceof Error?e.message:'Unable to refresh this live order.');return null}},[id])
  useEffect(()=>{if(order)void revalidate()},[order,revalidate])
- const makePreview=useCallback((current?:OrderWithSignature|null)=>{if(!client||!(current??raw))return null;try{const value=client.utils.toBigInt(amount||'0',client.chainConfig.tokens.USDC.decimals);if(value<=0n)throw new Error('Enter a USDC amount greater than 0.');const p=client.optionBook.previewFillOrder(current??raw!,value),next={amount:value,...p};setPreview(next);setMessage(null);return next}catch(e){setPreview(null);setMessage(e instanceof Error?e.message:'Unable to calculate this fill.');return null}},[amount,client,raw])
+ const makePreview=useCallback((current?:OrderWithSignature|null)=>{const target=current??raw;if(!client||!target)return null;try{const next=computeFillPreview(client,amount,target);setPreview(next);setMessage(null);return next}catch(e){setPreview(null);setMessage(e instanceof Error?e.message:'Unable to calculate this fill.');return null}},[amount,client,raw])
  useEffect(()=>{setPreview(null);setMessage(null);setPhase('idle')},[amount])
  const approve=useCallback(async()=>{const fresh=await revalidate(),value=makePreview(fresh);if(!fresh||!client||!value)return;const spender=client.chainConfig.contracts.optionBook;if(!spender){setMessage('OptionBook is not deployed on Base.');return}setPhase('approving');try{await client.erc20.ensureAllowance(client.chainConfig.tokens.USDC.address,spender,value.amount);setPhase('approved')}catch(e){setPhase(isUserRejection(e)?'cancelled':'error');setMessage(isUserRejection(e)?'Approval cancelled — no transaction was sent.':describe(e))}},[client,makePreview,revalidate])
  const fill=useCallback(async()=>{const fresh=await revalidate(),value=makePreview(fresh);if(!fresh||!client||!value||connection.status!=='connected')return;setPhase('signing');const stop=watchBroadcast(connection.provider,()=>setMessage('Transaction submitted. Confirming on Base…'));try{const receipt=await client.optionBook.fillOrder(fresh,value.amount);setHash(receipt.hash);setPhase('success')}catch(e){setPhase(isUserRejection(e)?'cancelled':'error');setMessage(isUserRejection(e)?'Trade cancelled — no transaction was sent.':describe(e))}finally{stop()}},[client,connection,makePreview,revalidate])
