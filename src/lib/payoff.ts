@@ -38,6 +38,11 @@ export function maxLossTotal(premium: number, positionSize: number): number {
   return premium * positionSize
 }
 
+/** Best-case profit for a long put: the underlying can't settle below zero, so gain is capped at strike minus premium. A long call has no such cap (uncapped upside). */
+export function maxPutGainTotal(strike: number, premium: number, positionSize: number): number {
+  return Math.max(0, strike - premium) * positionSize
+}
+
 /** Evenly spaced expiry-price samples spanning [currentPrice * (1 - rangeFraction), currentPrice * (1 + rangeFraction)]. */
 export function buildPriceRange(currentPrice: number, rangeFraction = 0.3, steps = 61): PricePoint[] {
   const min = currentPrice * (1 - rangeFraction)
