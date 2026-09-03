@@ -1,6 +1,7 @@
 import type { PayoffFacts } from '../components/PayoffPreviewBody'
 export type { PayoffFacts } from '../components/PayoffPreviewBody'
 import { parseOrderNumber, parseStrikeList } from './formatters'
+import { spreadWidth } from './spreadPayoff'
 import { resolveAssetPrice, type ExplorerData, type ExplorerOrder } from './thetanuts'
 
 /**
@@ -47,4 +48,16 @@ export function buildPayoffFacts(order: ExplorerOrder, marketData: ExplorerData[
   }
 
   return null
+}
+
+/**
+ * A 2-strike order is only a well-formed vertical debit spread if its strikes follow the Thetanuts
+ * SDK's [near, far] convention (near = the long leg, ascending for a call spread since the long
+ * leg is the lower strike, descending for a put spread since the long leg is the upper strike) and
+ * the debit paid doesn't exceed the spread's own width (a premium above the width would make the
+ * position a guaranteed loser, which isn't a real tradeable structure).
+ */
+export function isSupportedDebitSpread(facts: Extract<PayoffFacts, { kind: 'spread' }>): boolean {
+  const ordered = facts.spreadType === 'CALL_SPREAD' ? facts.nearStrike < facts.farStrike : facts.nearStrike > facts.farStrike
+  return ordered && facts.premium > 0 && facts.premium <= spreadWidth(facts.nearStrike, facts.farStrike)
 }

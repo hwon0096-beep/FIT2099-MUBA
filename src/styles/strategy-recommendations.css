@@ -1,0 +1,29 @@
+.strategy-recs header p{margin:4px 0 0;max-width:640px;color:#98aabe;font-size:12px;line-height:1.5}
+.strategy-controls{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:12px}
+.strategy-pill-group{display:flex;flex-wrap:wrap;gap:6px}
+.strategy-pill-group button{border:1px solid rgba(109,144,170,.3);border-radius:8px;background:#081624;padding:7px 12px;color:#c3ced8;font-size:12px;font-weight:600;cursor:pointer}
+.strategy-pill-group button.active{border-color:#2be4c7;background:rgba(43,228,199,.14);color:#43e5c8}
+.strategy-pill-group button.active.bearish{border-color:#ff6f9c;background:rgba(255,111,156,.14);color:#ff9cbb}
+.strategy-pill-group button.active.neutral{border-color:#ffcf5c;background:rgba(255,207,92,.14);color:#ffcf5c}
+.strategy-note{margin:0 0 12px;border:1px solid rgba(255,207,92,.28);border-radius:10px;background:rgba(255,207,92,.08);padding:10px 12px;color:#e3d3a4;font-size:12px;line-height:1.5}
+.strategy-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.strategy-card{border:1px solid rgba(113,147,175,.28);border-radius:14px;background:linear-gradient(145deg,rgba(12,28,43,.98),rgba(5,17,29,.98));padding:14px;display:flex;flex-direction:column;gap:8px}
+.strategy-card.unavailable{color:#8ea0b3;font-size:12px;line-height:1.5}
+.strategy-card.unavailable h3{margin:0 0 6px;font-size:14px;color:#c3ced8}
+.strategy-card header{display:flex;align-items:center;justify-content:space-between;margin:0}
+.strategy-card h3{margin:0;font-size:15px}
+.outlook-tag{border-radius:7px;padding:4px 8px;font-size:11px;font-weight:700}
+.outlook-tag.bullish{background:#073e38;color:#45e5c7}
+.outlook-tag.bearish{background:#40152c;color:#ff79a4}
+.outlook-tag.neutral{background:#3a2e08;color:#ffcf5c}
+.strategy-legs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px;font-size:12px;color:#d8e1eb}
+.strategy-legs span.buy{color:#45e5c7;font-weight:700}
+.strategy-legs span.sell{color:#ff9cbb;font-weight:700}
+.strategy-expiry{margin:0;color:#8ea0b3;font-size:11px}
+.strategy-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 10px;margin:0}
+.strategy-metrics dt{color:#8ea0b3;font-size:10px}
+.strategy-metrics dd{margin:2px 0 0;color:#edf4fa;font-size:13px;font-weight:600}
+.strategy-reason{margin:0;color:#a8b7c6;font-size:12px;line-height:1.45;flex:1}
+.strategy-analyze{align-self:flex-start;border:1px solid rgba(43,228,199,.4);border-radius:8px;background:rgba(43,228,199,.1);padding:7px 12px;color:#43e5c8;font-size:12px;font-weight:700;cursor:pointer}
+.strategy-spot-note{display:block;margin-top:10px;color:#8ea0b3;font-size:11px}
+@media(max-width:700px){.strategy-controls{flex-direction:column}}
