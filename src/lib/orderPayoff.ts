@@ -11,7 +11,7 @@ import { resolveAssetPrice, type ExplorerData, type ExplorerOrder } from './thet
  * when its collateral is USDC itself — anything else must be shown in its native denomination
  * instead of silently treated as a 1:1 USD amount.
  */
-export function isPremiumUsdSafe(order: ExplorerOrder): boolean {
+export function isPremiumUsdSafe(order: { collateral: string }): boolean {
   return order.collateral === 'USDC'
 }
 

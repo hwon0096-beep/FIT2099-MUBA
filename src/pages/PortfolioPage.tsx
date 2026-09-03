@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { formatAmount } from '@thetanuts-finance/thetanuts-client'
-import { formatExpiry } from '../lib/formatters'
+import { formatExpiry, formatUsd } from '../lib/formatters'
 import { truncateAddress, useWallet } from '../lib/WalletContext'
 import { fetchTakerFills, type TakerFill } from '../lib/orderFillEvents'
+import { loadExplorerData, resolveAssetPrice, type ExplorerData } from '../lib/thetanuts'
+import { isPremiumUsdSafe } from '../lib/orderPayoff'
+import { netPnlAtExpiry as vanillaNetPnlAtExpiry } from '../lib/payoff'
+import { netPnlAtExpiry as spreadNetPnlAtExpiry } from '../lib/spreadPayoff'
 
 // Loosely typed on purpose: client.api.getBookOption()'s real response (verified directly
 // against a live position) has far more fields than the SDK's own BookOptionDetail type
@@ -21,6 +25,7 @@ interface BookOptionDetail {
   amount?: string
   collateralSymbol?: string
   collateralDecimals?: number
+  settlement?: { settlementPrice?: string } | null
 }
 
 type DetailState =
@@ -71,6 +76,13 @@ async function loadDetailsFor(fills: TakerFill[]): Promise<PositionRow[]> {
 export default function PortfolioPage() {
   const { connection, chain, client, connectWallet, switchToBase } = useWallet()
   const [positions, setPositions] = useState<PositionsState>({ status: 'idle' })
+  const [marketData, setMarketData] = useState<ExplorerData['marketData']>(undefined)
+
+  // Live spot prices for the P&L column below — same feed DiscoverPage/AnalyzePage use, fetched
+  // independently of the wallet/fills search since it doesn't depend on either.
+  useEffect(() => {
+    loadExplorerData().then((data) => setMarketData(data.marketData)).catch(() => setMarketData(undefined))
+  }, [])
 
   const runSearch = useCallback(async (untilBlock: number, append: boolean) => {
     if (connection.status !== 'connected' || !client) return
@@ -174,11 +186,11 @@ export default function PortfolioPage() {
                 <thead>
                   <tr>
                     <th>Asset</th><th>Type</th><th>Strike(s)</th><th>Expiry (UTC)</th>
-                    <th>Entry price paid</th><th>Contracts</th><th>Status</th><th aria-label="Transaction" />
+                    <th>Entry price paid</th><th>Contracts</th><th>Status</th><th>P&L</th><th aria-label="Transaction" />
                   </tr>
                 </thead>
                 <tbody>
-                  {positions.rows.map((row) => <PositionTableRow key={row.fill.transactionHash + row.fill.logIndex} row={row} />)}
+                  {positions.rows.map((row) => <PositionTableRow key={row.fill.transactionHash + row.fill.logIndex} row={row} prices={marketData?.prices} />)}
                 </tbody>
               </table>
             </div>
@@ -200,15 +212,67 @@ export default function PortfolioPage() {
   )
 }
 
-function PositionTableRow({ row }: { row: PositionRow }) {
+type MarketPrices = NonNullable<ExplorerData['marketData']>['prices']
+
+type PositionPnl =
+  | { kind: 'value'; pnl: number }
+  | { kind: 'unavailable' }
+  | { kind: 'non-usd' }
+
+/**
+ * Current value at the relevant price minus the entry premium on record, via the same
+ * payoff.ts/spreadPayoff.ts math used on Discover/Analyze — never recomputed here, just fed a
+ * different `priceAtExpiry`: the oracle settlement price for a settled position (its true payoff
+ * is fixed, not whatever spot happens to be now), live spot for one still open, and "unavailable"
+ * for a closed position (no exit price on record to value it against) or one missing data.
+ */
+function computePositionPnl(info: BookOptionDetail, prices: MarketPrices | undefined): PositionPnl {
+  if (!isPremiumUsdSafe({ collateral: info.collateralSymbol ?? '' })) return { kind: 'non-usd' }
+
+  const strikes = info.strikes?.map((strike) => Number(formatAmount(BigInt(strike), 8)))
+  const entryPriceRaw = info.entryPrice ?? info.entryPremium
+  const numContractsRaw = info.numContracts ?? info.amount
+  if (!strikes?.length || entryPriceRaw === undefined || numContractsRaw === undefined) return { kind: 'unavailable' }
+
+  let priceAtExpiry: number | undefined
+  if (info.optionStatus === 'settled-itm' || info.optionStatus === 'settled-otm') {
+    const settlementPriceRaw = info.settlement?.settlementPrice
+    priceAtExpiry = settlementPriceRaw !== undefined ? Number(formatAmount(BigInt(settlementPriceRaw), 8)) : undefined
+  } else if (info.optionStatus === 'closed') {
+    priceAtExpiry = undefined
+  } else {
+    priceAtExpiry = info.underlyingAsset !== undefined ? resolveAssetPrice(info.underlyingAsset, prices) : undefined
+  }
+  if (priceAtExpiry === undefined || !Number.isFinite(priceAtExpiry)) return { kind: 'unavailable' }
+
+  const collateralDecimals = info.collateralDecimals ?? 6
+  const premium = Number(formatAmount(BigInt(entryPriceRaw), collateralDecimals))
+  const positionSize = Number(formatAmount(BigInt(numContractsRaw), 6))
+  const isPut = (info.implementationName ?? '').toLowerCase().includes('put')
+
+  const pnl = info.implementationType === 'SPREAD' && strikes.length === 2
+    ? spreadNetPnlAtExpiry({ spreadType: isPut ? 'PUT_SPREAD' : 'CALL_SPREAD', nearStrike: strikes[0], farStrike: strikes[1], premium, positionSize, currentPrice: priceAtExpiry }, priceAtExpiry)
+    : vanillaNetPnlAtExpiry({ optionType: isPut ? 'PUT' : 'CALL', strike: strikes[0], premium, positionSize, currentPrice: priceAtExpiry }, priceAtExpiry)
+
+  return { kind: 'value', pnl }
+}
+
+function PnlCell({ info, prices }: { info: BookOptionDetail; prices: MarketPrices | undefined }) {
+  const result = computePositionPnl(info, prices)
+  if (result.kind === 'non-usd') return <td className="numeric" title="Premium isn't USD-denominated">Non-USDC</td>
+  if (result.kind === 'unavailable') return <td className="numeric">—</td>
+  return <td className={`numeric ${result.pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`}>{result.pnl >= 0 ? '+' : ''}{formatUsd(result.pnl)}</td>
+}
+
+function PositionTableRow({ row, prices }: { row: PositionRow; prices: MarketPrices | undefined }) {
   const { fill, detail } = row
 
   if (detail.status === 'loading') {
-    return <tr><td colSpan={8}><span className="loader" />Loading position details…</td></tr>
+    return <tr><td colSpan={9}><span className="loader" />Loading position details…</td></tr>
   }
   if (detail.status === 'error') {
     return <tr>
-      <td colSpan={7} className="numeric">{detail.message}</td>
+      <td colSpan={8} className="numeric">{detail.message}</td>
       <td><a href={`https://basescan.org/tx/${fill.transactionHash}`} target="_blank" rel="noreferrer">Tx ↗</a></td>
     </tr>
   }
@@ -229,6 +293,7 @@ function PositionTableRow({ row }: { row: PositionRow }) {
     <td className="numeric">{entryPriceRaw !== undefined ? `${formatAmount(BigInt(entryPriceRaw), collateralDecimals, 6)} ${info.collateralSymbol ?? ''}` : 'Unavailable'}</td>
     <td className="numeric">{numContractsRaw !== undefined ? formatAmount(BigInt(numContractsRaw), 6, 4) : 'Unavailable'}</td>
     <td>{statusLabel}</td>
+    <PnlCell info={info} prices={prices} />
     <td><a href={`https://basescan.org/tx/${fill.transactionHash}`} target="_blank" rel="noreferrer">Tx ↗</a></td>
   </tr>
 }
