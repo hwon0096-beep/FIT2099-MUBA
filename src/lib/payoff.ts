@@ -43,6 +43,21 @@ export function maxPutGainTotal(strike: number, premium: number, positionSize: n
   return Math.max(0, strike - premium) * positionSize
 }
 
+export type Moneyness = 'ITM' | 'ATM' | 'OTM'
+
+/** Classifies a call/put as in/at/out-of-the-money by comparing live spot to strike, treating spot within 0.1% of the strike as at-the-money rather than requiring an exact match. */
+export function moneyness(optionType: OptionType, strike: number, spot: number): Moneyness {
+  const band = strike * 0.001
+  if (Math.abs(spot - strike) <= band) return 'ATM'
+  return (optionType === 'CALL' ? spot > strike : spot < strike) ? 'ITM' : 'OTM'
+}
+
+/** Reward-to-risk ratio (max profit ÷ max loss). Undefined when max profit is uncapped (e.g. a long call's unlimited upside) or max loss isn't positive. */
+export function riskRewardRatio(maxProfit: number | undefined, maxLoss: number): number | undefined {
+  if (maxProfit === undefined || maxLoss <= 0) return undefined
+  return maxProfit / maxLoss
+}
+
 /** Evenly spaced expiry-price samples spanning [currentPrice * (1 - rangeFraction), currentPrice * (1 + rangeFraction)]. */
 export function buildPriceRange(currentPrice: number, rangeFraction = 0.3, steps = 61): PricePoint[] {
   const min = currentPrice * (1 - rangeFraction)

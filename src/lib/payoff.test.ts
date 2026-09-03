@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { breakevenPrice, buildScenarios, intrinsicValueAtExpiry, maxLossTotal, maxPutGainTotal, netPnlAtExpiry, type PayoffInputs } from './payoff'
+import { breakevenPrice, buildScenarios, intrinsicValueAtExpiry, maxLossTotal, maxPutGainTotal, moneyness, netPnlAtExpiry, riskRewardRatio, type PayoffInputs } from './payoff'
 
 describe('vanilla option payoff', () => {
   const call: PayoffInputs = { optionType: 'CALL', strike: 2000, premium: 50, positionSize: 2, currentPrice: 2000 }
@@ -52,5 +52,24 @@ describe('vanilla option payoff', () => {
       { changePercent: 0, price: 2000, pnl: netPnlAtExpiry(call, 2000) },
       { changePercent: 10, price: 2200, pnl: netPnlAtExpiry(call, 2200) },
     ])
+  })
+
+  it('classifies moneyness by comparing spot to strike', () => {
+    expect(moneyness('CALL', 2000, 2150)).toBe('ITM')
+    expect(moneyness('CALL', 2000, 1850)).toBe('OTM')
+    expect(moneyness('PUT', 2000, 1850)).toBe('ITM')
+    expect(moneyness('PUT', 2000, 2150)).toBe('OTM')
+    // Within the small at-the-money band around the strike, either side.
+    expect(moneyness('CALL', 2000, 2000)).toBe('ATM')
+    expect(moneyness('CALL', 2000, 2001)).toBe('ATM')
+    expect(moneyness('PUT', 2000, 1999)).toBe('ATM')
+  })
+
+  it('computes a reward-to-risk ratio from max profit and max loss', () => {
+    expect(riskRewardRatio(300, 100)).toBe(3)
+    // A long call's uncapped upside has no defined ratio.
+    expect(riskRewardRatio(undefined, 100)).toBeUndefined()
+    // Zero or negative max loss has no meaningful ratio.
+    expect(riskRewardRatio(300, 0)).toBeUndefined()
   })
 })

@@ -55,6 +55,12 @@ export function formatExpiry(timestamp: bigint | string): string {
   }).format(date)} UTC`
 }
 
+/** Whole days remaining until expiry (0 once expired), for a numeric DTE stat alongside the human-readable timeLeft-style string. */
+export function daysToExpiry(timestamp: bigint | string): number {
+  const remainingMs = Number(timestamp) * 1000 - Date.now()
+  return Math.max(0, Math.floor(remainingMs / 86_400_000))
+}
+
 /** Compact UTC expiry for space-constrained order tables. */
 export function formatCompactExpiry(timestamp: bigint | string): string {
   const date = new Date(Number(timestamp) * 1000)
