@@ -232,14 +232,24 @@ async function loadSourceWithRetry<T>(source: string, request: () => Promise<T>)
   }
 }
 
-export function tokenSymbol(address: string | undefined, client: ThetanutsClient) {
-  if (!address) return 'Unknown collateral'
-
-  const token = Object.values(client.chainConfig.tokens).find(
+function findToken(address: string | undefined, client: ThetanutsClient) {
+  if (!address) return undefined
+  return Object.values(client.chainConfig.tokens).find(
     ({ address: tokenAddress }) => tokenAddress.toLowerCase() === address.toLowerCase(),
   )
+}
 
-  return token?.symbol ?? `${address.slice(0, 6)}…${address.slice(-4)}`
+export function tokenSymbol(address: string | undefined, client: ThetanutsClient) {
+  if (!address) return 'Unknown collateral'
+  return findToken(address, client)?.symbol ?? `${address.slice(0, 6)}…${address.slice(-4)}`
+}
+
+// availableAmount is the maker's raw on-chain collateral balance for this order — reported in
+// that collateral token's own decimals (18 for WETH-family, 8 for cbBTC-family, 6 for USDC-family),
+// not a fixed protocol-wide scale like price/numContracts. Formatting it with the wrong decimals
+// (verified directly against live orders) is off by orders of magnitude, not just imprecise.
+function collateralDecimals(address: string | undefined, client: ThetanutsClient): number {
+  return findToken(address, client)?.decimals ?? 6
 }
 
 export function normalizeOrder(orderWithSignature: OrderWithSignature, client: ThetanutsClient): ExplorerOrder {
@@ -255,6 +265,7 @@ export function normalizeOrder(orderWithSignature: OrderWithSignature, client: T
   const strikes = order.strikes ?? (order.strikePrice ? [order.strikePrice] : [])
 
   const optionType = rawApiData ? (rawApiData.isCall ? 'CALL' : 'PUT') : 'UNKNOWN'
+  const collateralAddress = rawApiData?.collateral ?? order.collateralToken
 
   return {
     // order.nonce alone collides across an order's legs (e.g. a call/put pair sharing one
@@ -266,8 +277,8 @@ export function normalizeOrder(orderWithSignature: OrderWithSignature, client: T
     expiry: order.expiry.toString(),
     pricePerContract: formatAmount(order.price, 8, 6),
     contracts: formatAmount(order.numContracts, 6, 4),
-    availableAmount: formatAmount(orderWithSignature.availableAmount, 6, 4),
-    collateral: tokenSymbol(rawApiData?.collateral ?? order.collateralToken, client),
+    availableAmount: formatAmount(orderWithSignature.availableAmount, collateralDecimals(collateralAddress, client), 4),
+    collateral: tokenSymbol(collateralAddress, client),
   }
 }
 

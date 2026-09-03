@@ -124,6 +124,22 @@ describe('normalizeOrder', () => {
     const order = makeOrderWithSignature({ collateral: usdc.address })
     expect(normalizeOrder(order, fakeClient).collateral).toBe('USDC')
   })
+
+  // availableAmount is a raw on-chain balance in the collateral token's own decimals (18 for
+  // WETH, not the 6 used elsewhere for USDC-denominated price/numContracts) — formatting it at
+  // a fixed 6 decimals understates an 18-decimal balance by a factor of a trillion.
+  it('formats availableAmount using the collateral token\'s own decimals, not a fixed 6', () => {
+    const weth = chainConfig.tokens.WETH
+    const order = makeOrderWithSignature({ collateral: weth.address })
+    order.availableAmount = 4_162_850_720_173_174_589n // ~4.1628 WETH, raw 18-decimal
+    expect(normalizeOrder(order, fakeClient).availableAmount).toBe('4.1628')
+  })
+
+  it('falls back to 6 decimals for an unrecognized collateral token', () => {
+    const order = makeOrderWithSignature({ collateral: '0x1234567890abcdef1234567890abcdef12345678' })
+    order.availableAmount = 5_000_000n
+    expect(normalizeOrder(order, fakeClient).availableAmount).toBe('5')
+  })
 })
 
 // loadThetanutsData()'s Promise.allSettled -> errors[] aggregation, now wrapped

@@ -59,5 +59,8 @@ export async function assertBaseNetwork(provider: { getNetwork: () => Promise<{ 
 export async function ensureTradeAllowance(client: ThetanutsClient, preview: FillPreview) {
   const spender = client.chainConfig.contracts.optionBook
   if (!spender) throw new Error('OptionBook is not deployed on Base.')
-  return client.erc20.ensureAllowance(client.chainConfig.tokens.USDC.address, spender, preview.amount)
+  // The order's own collateral token — not always USDC (see orderPayoff.ts's isPremiumUsdSafe).
+  // Approving USDC for a WETH/cbBTC-collateralized order would grant allowance on a token
+  // fillOrder never touches, leaving the real collateral token unapproved and the fill reverting.
+  return client.erc20.ensureAllowance(preview.collateralToken, spender, preview.amount)
 }

@@ -12,13 +12,13 @@ function makeOrder(availableContracts = 2_000_000_000n, expiry = future): OrderW
   } as unknown as OrderWithSignature
 }
 
-function makeClient(options: { previewError?: Error; allowanceResult?: unknown } = {}) {
+function makeClient(options: { previewError?: Error; allowanceResult?: unknown; collateralToken?: string } = {}) {
   const ensureAllowance = vi.fn().mockResolvedValue(options.allowanceResult ?? null)
   const previewFillOrder = vi.fn((order: OrderWithSignature, amount: bigint) => {
     if (options.previewError) throw options.previewError
     const requested = amount * 100_000_000n / order.order.price
     const maximum = order.availableAmount
-    return { numContracts: requested > maximum ? maximum : requested, maxContracts: maximum, pricePerContract: order.order.price, totalCollateral: amount, collateralToken: '0xUSDC' }
+    return { numContracts: requested > maximum ? maximum : requested, maxContracts: maximum, pricePerContract: order.order.price, totalCollateral: amount, collateralToken: options.collateralToken ?? '0xUSDC' }
   })
   const client = {
     utils: {
@@ -90,6 +90,13 @@ describe('trade pre-flight validation', () => {
     const preview = validateTradePreflight(input(client, makeOrder()))
     await expect(ensureTradeAllowance(client, preview)).resolves.toBe(approval)
     expect(ensureAllowance).toHaveBeenCalledWith('0xUSDC', '0xBOOK', 5_000_000n)
+  })
+
+  it('approves the order\'s own collateral token, not USDC, when the order is collateralized in something else', async () => {
+    const { client, ensureAllowance } = makeClient({ collateralToken: '0xWETH' })
+    const preview = validateTradePreflight(input(client, makeOrder()))
+    await ensureTradeAllowance(client, preview)
+    expect(ensureAllowance).toHaveBeenCalledWith('0xWETH', '0xBOOK', 5_000_000n)
   })
 
   it('surfaces previewFillOrder failure and never produces an executable preview', () => {
