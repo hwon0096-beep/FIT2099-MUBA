@@ -25,5 +25,7 @@
 .strategy-metrics dd{margin:2px 0 0;color:#edf4fa;font-size:13px;font-weight:600}
 .strategy-reason{margin:0;color:#a8b7c6;font-size:12px;line-height:1.45;flex:1}
 .strategy-analyze{align-self:flex-start;border:1px solid rgba(43,228,199,.4);border-radius:8px;background:rgba(43,228,199,.1);padding:7px 12px;color:#43e5c8;font-size:12px;font-weight:700;cursor:pointer}
+.strategy-actions{display:flex;flex-wrap:wrap;gap:8px}
+.strategy-save{align-self:flex-start;border:1px solid rgba(109,144,170,.35);border-radius:8px;background:transparent;padding:7px 12px;color:#c3ced8;font-size:12px;font-weight:700;cursor:pointer}
 .strategy-spot-note{display:block;margin-top:10px;color:#8ea0b3;font-size:11px}
 @media(max-width:700px){.strategy-controls{flex-direction:column}}

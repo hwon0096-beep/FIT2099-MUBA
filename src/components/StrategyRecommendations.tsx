@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatCompactExpiry, formatNumber, formatUsd } from '../lib/formatters'
+import { isPremiumUsdSafe } from '../lib/orderPayoff'
 import { buildStrategyCandidates, type Outlook, type StrategyRecommendation } from '../lib/strategyRecommendations'
 import { resolveAssetPrice, type ExplorerData, type ExplorerOrder } from '../lib/thetanuts'
+import { useSavedStrategies } from '../hooks/useSavedStrategies'
 import '../styles/strategy-recommendations.css'
 
 const OUTLOOKS: { value: Outlook; label: string }[] = [
@@ -67,6 +69,29 @@ export default function StrategyRecommendations({ orders, marketData }: { orders
 }
 
 function StrategyCard({ rec, onAnalyze }: { rec: StrategyRecommendation; onAnalyze: () => void }) {
+  const { items, save, remove } = useSavedStrategies()
+  const existing = items.find((item) => item.source === 'recommendation' && item.orderId === rec.order.id && item.kind === rec.kind)
+  const handleSave = () => {
+    if (existing) { remove(existing.id); return }
+    save({
+      id: crypto.randomUUID(),
+      savedAt: Date.now(),
+      source: 'recommendation',
+      kind: rec.kind,
+      name: rec.name,
+      asset: rec.asset,
+      optionType: rec.legs.length === 1 ? rec.legs[0].optionType : 'UNKNOWN',
+      strikes: rec.legs.map((leg) => `$${formatNumber(leg.strike, 2)}`).join(' / '),
+      expiry: rec.expiry,
+      collateral: rec.order.collateral,
+      orderId: rec.order.id,
+      isUsdSafe: isPremiumUsdSafe(rec.order),
+      premium: rec.premium,
+      maxProfit: rec.maxProfit,
+      maxLoss: rec.maxLoss,
+      breakevens: rec.breakevens,
+    })
+  }
   return (
     <article className="strategy-card">
       <header>
@@ -89,7 +114,10 @@ function StrategyCard({ rec, onAnalyze }: { rec: StrategyRecommendation; onAnaly
         <div><dt>Breakeven</dt><dd>{rec.breakevens.map((value) => formatUsd(value)).join(' – ')}</dd></div>
       </dl>
       <p className="strategy-reason">{rec.reason}</p>
-      <button type="button" className="strategy-analyze" onClick={onAnalyze}>Analyze this order →</button>
+      <div className="strategy-actions">
+        <button type="button" className="strategy-analyze" onClick={onAnalyze}>Analyze this order →</button>
+        <button type="button" className="strategy-save" onClick={handleSave}>{existing ? 'Saved ✓ — Remove' : 'Save Idea'}</button>
+      </div>
     </article>
   )
 }
