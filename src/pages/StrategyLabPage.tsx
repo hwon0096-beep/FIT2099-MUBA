@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { NutIcon } from '../components/VisualSystem'
+import PremiumUnlockModal from '../components/PremiumUnlockModal'
+import { useAccount } from '../context/AccountContext'
 import { formatCompactExpiry, parseOrderNumber, parseStrikeList } from '../lib/formatters'
 import { loadExplorerData, type ExplorerData, type ExplorerOrder } from '../lib/thetanuts'
 import { defaultPaperContract, paperPositions, paperSummary, recentPaperTrades, type PaperContract, type PaperOptionSide } from '../data/paperTradingMockData'
@@ -17,6 +19,7 @@ function orderAsset(order: ExplorerOrder): string { return order.asset.trim().to
 
 /** The four spread-structure Type values switch the chain into the flat Spreads table layout instead of the vanilla strike-grouped one. */
 function isSpreadType(type: TypeFilter): boolean { return type !== 'ALL' && type !== 'CALL' && type !== 'PUT' }
+function isPremiumChainType(type: TypeFilter): boolean { return isSpreadType(type) }
 
 /**
  * Labels a multi-leg order and describes its legs, reusing the same leg conventions already coded
@@ -41,6 +44,7 @@ function describeSpread(order: ExplorerOrder): { label: string; legs: string } {
 }
 
 export default function StrategyLabPage() {
+  const { tier } = useAccount()
   const [selected, setSelected] = useState<PaperContract>(defaultPaperContract)
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [quantity, setQuantity] = useState(1)
@@ -52,6 +56,7 @@ export default function StrategyLabPage() {
   const [expiryFilter, setExpiryFilter] = useState('ALL')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('ALL')
   const [visibleCount, setVisibleCount] = useState(CHAIN_PAGE_SIZE)
+  const [showUnlock, setShowUnlock] = useState(false)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -148,15 +153,16 @@ export default function StrategyLabPage() {
     <div className="strategy-lab__workspace">
       <div className="strategy-lab__main">
         <section className="paper-summary" aria-label="Simulated account summary">{paperSummary.slice(0, 3).map((item, index) => <article key={item.label}><span className="summary-icon"><NutIcon name={index === 0 ? 'wallet' : index === 1 ? 'trend' : 'contract'} /></span><div><small>{item.label}</small><strong className={'tone' in item && item.tone === 'positive' ? 'pnl-positive' : ''}>{item.value}</strong><em className={'tone' in item && item.tone === 'positive' ? 'pnl-positive' : ''}>{index === 2 ? 'positions' : item.detail}</em></div></article>)}</section>
-        <OptionsChain rows={pagedRows} spreadRows={pagedSpreadTableOrders} totalRows={totalRows} assets={assets} expiries={expiries} assetFilter={assetFilter} expiryFilter={expiryFilter} typeFilter={typeFilter} search={search} selectedKey={selectedKey} loading={loading} error={error} onAsset={setAssetFilter} onExpiry={setExpiryFilter} onType={setTypeFilter} onSearch={setSearch} onSelect={selectContract} onLoadMore={() => setVisibleCount((count) => count + CHAIN_PAGE_SIZE)} />
+        <OptionsChain rows={pagedRows} spreadRows={pagedSpreadTableOrders} totalRows={totalRows} assets={assets} expiries={expiries} assetFilter={assetFilter} expiryFilter={expiryFilter} typeFilter={typeFilter} search={search} selectedKey={selectedKey} loading={loading} error={error} premium={tier === 'premium'} onAsset={setAssetFilter} onExpiry={setExpiryFilter} onType={(next) => { if (isPremiumChainType(next) && tier !== 'premium') setShowUnlock(true); else setTypeFilter(next) }} onSearch={setSearch} onSelect={selectContract} onLoadMore={() => setVisibleCount((count) => count + CHAIN_PAGE_SIZE)} />
         <OpenPaperPositions />
       </div>
       <aside className="strategy-lab__side"><PaperOrderTicket contract={selected} quantity={quantity} onQuantityChange={setQuantity} /><RecentPaperTrades /></aside>
     </div>
+    {showUnlock && <PremiumUnlockModal onClose={() => setShowUnlock(false)} />}
   </main>
 }
 
-function OptionsChain({ rows, spreadRows, totalRows, assets, expiries, assetFilter, expiryFilter, typeFilter, search, selectedKey, loading, error, onAsset, onExpiry, onType, onSearch, onSelect, onLoadMore }: { rows: ChainRow[]; spreadRows: ExplorerOrder[]; totalRows: number; assets: string[]; expiries: string[]; assetFilter: string; expiryFilter: string; typeFilter: TypeFilter; search: string; selectedKey: string | null; loading: boolean; error: string | null; onAsset: (value: string) => void; onExpiry: (value: string) => void; onType: (value: TypeFilter) => void; onSearch: (value: string) => void; onSelect: (row: ChainRow, side: PaperOptionSide) => void; onLoadMore: () => void }) {
+function OptionsChain({ rows, spreadRows, totalRows, assets, expiries, assetFilter, expiryFilter, typeFilter, search, selectedKey, loading, error, premium, onAsset, onExpiry, onType, onSearch, onSelect, onLoadMore }: { rows: ChainRow[]; spreadRows: ExplorerOrder[]; totalRows: number; assets: string[]; expiries: string[]; assetFilter: string; expiryFilter: string; typeFilter: TypeFilter; search: string; selectedKey: string | null; loading: boolean; error: string | null; premium: boolean; onAsset: (value: string) => void; onExpiry: (value: string) => void; onType: (value: TypeFilter) => void; onSearch: (value: string) => void; onSelect: (row: ChainRow, side: PaperOptionSide) => void; onLoadMore: () => void }) {
   const isSpreadMode = isSpreadType(typeFilter)
   // With no dedicated Expiry column, a strike shown under more than one expiry needs the expiry
   // spelled out inline so two different contracts don't read as the same row.
