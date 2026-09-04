@@ -1,5 +1,6 @@
 import express from 'express'
 import { fetchBookOption, fetchFillOrders, loadThetanutsData } from './thetanuts.js'
+import { createAIAnalystHandler } from './aiAnalyst.js'
 
 // Builds the Express app without binding it to a port, so both the local dev
 // entrypoint (index.ts, listening on 8787 behind Vite's proxy) and the
@@ -7,6 +8,8 @@ import { fetchBookOption, fetchFillOrders, loadThetanutsData } from './thetanuts
 // share the exact same route definitions instead of duplicating them.
 export function createApp() {
   const app = express()
+
+  app.post('/api/chat', express.json({ limit: '16kb' }), createAIAnalystHandler())
 
   // No SDK/RPC calls here on purpose — this must answer even when Thetanuts
   // or the RPC provider is down, so deployment monitoring can tell the
