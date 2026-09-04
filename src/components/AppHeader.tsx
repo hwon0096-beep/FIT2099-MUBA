@@ -3,7 +3,7 @@ import { truncateAddress, useWallet } from '../lib/WalletContext'
 import { NutIcon, ProductMark } from './VisualSystem'
 import '../styles/app-header.css'
 
-const links = [{ label: 'Discover', to: '/' }, { label: 'Markets', to: '/markets' }, { label: 'Analyze', to: '/analyze' }, { label: 'Trade', to: '/trade' }, { label: 'Portfolio', to: '/portfolio' }]
+const links = [{ label: 'Discover', to: '/' }, { label: 'Markets', to: '/markets' }, { label: 'Analyze', to: '/analyze' }, { label: 'Trade', to: '/trade' }, { label: 'Strategy Lab', to: '/portfolio' }]
 export default function AppHeader() {
   const navigate = useNavigate(), { connection, connectWallet } = useWallet()
   const handleClick = () => { if (connection.status === 'no-wallet') { window.open('https://metamask.io', '_blank', 'noreferrer'); return } if (connection.status === 'connected') { navigate('/portfolio'); return } void connectWallet() }
