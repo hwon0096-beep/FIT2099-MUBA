@@ -1,0 +1,2 @@
+import type { RequestHandler } from 'express'
+export const loginHandler: RequestHandler = (request, response) => { const password = request.body?.password; if (typeof password !== 'string') { response.status(400).json({ error: 'Malformed login request' }); return } const configured = process.env.PREMIUM_PASSWORD; if (!configured) { response.status(503).json({ error: 'Premium access is unavailable' }); return } if (password !== configured) { response.status(401).json({ error: 'Invalid premium password' }); return } response.status(200).json({ tier: 'premium' }) }
