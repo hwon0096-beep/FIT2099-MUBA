@@ -7,7 +7,7 @@ const links = [
   { label: 'Markets', to: '/markets' },
   { label: 'Analyze', to: '/analyze' },
   { label: 'Trade', to: '/trade' },
-  { label: 'Portfolio', to: '/portfolio' },
+  { label: 'Strategy Lab', to: '/portfolio' },
 ]
 
 export default function AppHeader() {

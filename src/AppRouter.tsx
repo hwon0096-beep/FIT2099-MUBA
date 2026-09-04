@@ -4,7 +4,7 @@ import FillFlow from './FillFlow'
 import AppHeader from './components/AppHeader'
 import DiscoverPage from './pages/DiscoverPage'
 import AnalyzePage from './pages/AnalyzePage'
-import PortfolioPage from './pages/PortfolioPage'
+import StrategyLabPage from './pages/StrategyLabPage'
 import { WalletProvider } from './lib/WalletContext'
 
 export default function AppRouter() {
@@ -18,7 +18,7 @@ export default function AppRouter() {
           <Route path="/analyze" element={<AnalyzePage />} />
           <Route path="/trade" element={<FillFlow />} />
           <Route path="/fill" element={<FillFlow />} />
-          <Route path="/portfolio" element={<PortfolioPage />} />
+          <Route path="/portfolio" element={<StrategyLabPage />} />
         </Routes>
       </WalletProvider>
     </BrowserRouter>
