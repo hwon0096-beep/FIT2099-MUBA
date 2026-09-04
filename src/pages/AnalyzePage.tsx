@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Area, CartesianGrid, Line, LineChart, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import StrategyRecommendations from '../components/StrategyRecommendations'
+import AIAnalyst from '../components/AIAnalyst'
+import { buildAnalysisContext } from '../lib/analysisContext'
 import { daysToExpiry, formatCompactExpiry, formatExpiry, formatNumber, formatUsd, parseOrderNumber, parseStrikeList } from '../lib/formatters'
 import { buildPayoffFacts, isSupportedDebitSpread, type PayoffFacts } from '../lib/orderPayoff'
 import * as payoff from '../lib/payoff'
@@ -39,7 +41,8 @@ export default function AnalyzePage() {
     }
   }, [orders, params])
   const order = orders.find(item => item.id === selected) ?? null
-  return <main className="analyze-page"><div className="analyze-shell"><header className="analyze-heading"><div><h1>Analyze <em>Trade</em></h1><p>Understand the risk and expiry outcome of {order ? 'this' : 'a'} live OptionBook order.</p></div><button type="button" onClick={() => navigate('/markets')}>← Back to Markets</button></header>{error && <div className="analyze-notice">{error}</div>}{orders.length > 0 && <StrategyRecommendations orders={orders} marketData={data?.marketData} />}{!order ? <AnalyzeEmpty onBrowse={() => navigate('/markets')} loading={loading} /> : <TradeAnalysis order={order} marketData={data?.marketData} />}</div></main>
+  const analystContext = useMemo(() => order ? buildAnalysisContext(order, data?.marketData) : null, [data?.marketData, order])
+  return <main className="analyze-page"><div className="analyze-shell"><header className="analyze-heading"><div><h1>Analyze <em>Trade</em></h1><p>Understand the risk and expiry outcome of {order ? 'this' : 'a'} live OptionBook order.</p></div><button type="button" onClick={() => navigate('/markets')}>← Back to Markets</button></header>{error && <div className="analyze-notice">{error}</div>}{orders.length > 0 && <StrategyRecommendations orders={orders} marketData={data?.marketData} />}{!order ? <AnalyzeEmpty onBrowse={() => navigate('/markets')} loading={loading} /> : <><TradeAnalysis order={order} marketData={data?.marketData} />{analystContext && <AIAnalyst key={order.id} context={analystContext} />}</>}</div></main>
 }
 
 function AnalyzeEmpty({ onBrowse, loading }: { onBrowse: () => void; loading: boolean }) { const features = [['↗', 'Payoff at Expiry', 'Visualize profit and loss across possible expiry prices.'], ['◈', 'Risk Summary', 'See max loss, break-even, premium and potential upside.'], ['▤', 'Scenario Analysis', 'Compare outcomes across different underlying prices.'], ['✦', 'Plain-English Explanation', 'Understand what the option means without advanced options knowledge.'], ['◷', 'Time to Expiry', 'See how long remains until the live order expires.']]; return <section className="analyze-empty-state"><p className="analyze-kicker">ANALYZE LIVE OPTIONS</p><h2>Analyze Trade</h2><p>Understand the risk and payoff of a live Thetanuts OptionBook order before you trade.</p><button type="button" onClick={onBrowse}>Browse Live Markets <span>→</span></button>{loading && <small>Checking the live OptionBook…</small>}<div><h3>What you'll get</h3><section>{features.map(([icon, title, description]) => <article key={title}><i>{icon}</i><strong>{title}</strong><span>{description}</span></article>)}</section></div></section> }
