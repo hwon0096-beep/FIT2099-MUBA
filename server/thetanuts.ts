@@ -19,6 +19,8 @@ export interface ExplorerOrder {
   id: string
   asset: string
   optionType: 'CALL' | 'PUT' | 'UNKNOWN'
+  /** Whether the maker's resting order is a buy (a bid a taker can sell into) or a sell (an ask a taker can buy from) — derived from Order.isBuyer. */
+  side?: 'BUY' | 'SELL'
   strikes: string
   expiry: string
   pricePerContract: string
@@ -273,6 +275,7 @@ export function normalizeOrder(orderWithSignature: OrderWithSignature, client: T
     id: `${order.maker}-${order.nonce.toString()}-${optionType}-${order.expiry.toString()}-${strikes.join('_')}-${order.price.toString()}`,
     asset: priceFeed ? (priceFeedSymbols[priceFeed] ?? 'Unknown') : 'Unknown',
     optionType,
+    side: order.isBuyer ? 'BUY' : 'SELL',
     strikes: strikes.length > 0 ? strikes.map((strike) => `$${formatAmount(strike, 8, 2)}`).join(' / ') : 'Not supplied',
     expiry: order.expiry.toString(),
     pricePerContract: formatAmount(order.price, 8, 6),

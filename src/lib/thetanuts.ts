@@ -2,6 +2,8 @@ export interface ExplorerOrder {
   id: string
   asset: string
   optionType: 'CALL' | 'PUT' | 'UNKNOWN'
+  /** Whether the maker's resting order is a buy (a bid a taker can sell into) or a sell (an ask a taker can buy from). */
+  side?: 'BUY' | 'SELL'
   strikes: string
   expiry: string
   pricePerContract: string
