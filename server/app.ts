@@ -1,7 +1,7 @@
 import express from 'express'
 import { fetchBookOption, fetchFillOrders, loadThetanutsData } from './thetanuts.js'
 import { createAIAnalystHandler } from './aiAnalyst.js'
-import { loginHandler } from './login.js'
+import { loginErrorHandler, loginHandler } from './login.js'
 
 // Builds the Express app without binding it to a port, so both the local dev
 // entrypoint (index.ts, listening on 8787 behind Vite's proxy) and the
@@ -10,7 +10,7 @@ import { loginHandler } from './login.js'
 export function createApp() {
   const app = express()
 
-  app.post('/api/login', express.json({ limit: '2kb' }), loginHandler)
+  app.post('/api/login', express.json({ limit: '2kb' }), loginHandler, loginErrorHandler)
 
   app.post('/api/chat', express.json({ limit: '16kb' }), createAIAnalystHandler())
 
