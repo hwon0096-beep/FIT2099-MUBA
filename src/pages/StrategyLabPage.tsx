@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import StrategyAssistant from '../components/StrategyAssistant'
 import { NutIcon } from '../components/VisualSystem'
 import PremiumUnlockModal from '../components/PremiumUnlockModal'
 import SavedStrategiesSection from '../components/SavedStrategiesSection'
@@ -6,7 +7,7 @@ import SimpleStrategyOverview, { OverviewHero } from '../components/SimpleStrate
 import CompareStrategies from '../components/CompareStrategies'
 import { useAccount } from '../context/AccountContext'
 import { formatCompactExpiry, parseOrderNumber, parseStrikeList } from '../lib/formatters'
-import { loadExplorerData, type ExplorerData, type ExplorerOrder } from '../lib/thetanuts'
+import { loadExplorerData, resolveAssetPrice, type ExplorerData, type ExplorerOrder } from '../lib/thetanuts'
 import { defaultPaperContract, paperPositions, paperSummary, recentPaperTrades, type PaperContract, type PaperOptionSide } from '../data/paperTradingMockData'
 import '../styles/strategy-lab.css'
 import '../styles/strategy-lab-compact.css'
@@ -158,6 +159,15 @@ export default function StrategyLabPage() {
     setSelected({ asset: row.asset, type: side === 'call' ? 'Call' : 'Put', strike: row.strike, expiry: formatCompactExpiry(row.expiry), last: leg.ask, ask: leg.ask })
   }
 
+  const assistantOption = selectedKey ? {
+    asset: selected.asset,
+    type: selected.type,
+    strike: selected.strike,
+    expiry: selected.expiry,
+    premium: selected.ask,
+    currentPrice: resolveAssetPrice(selected.asset, data?.marketData?.prices),
+  } : undefined
+
   return <main className="app-shell strategy-lab">
     <header className={`strategy-lab__hero${activeTab === 'overview' ? ' strategy-lab__hero--overview' : ''}`}>
       {activeTab === 'overview' && <OverviewHero />}
@@ -180,6 +190,7 @@ export default function StrategyLabPage() {
     {activeTab === 'overview' && <SimpleStrategyOverview />}
     {activeTab === 'compare' && <CompareStrategies />}
     {showUnlock && <PremiumUnlockModal onClose={() => setShowUnlock(false)} />}
+    <StrategyAssistant selectedOption={assistantOption} />
   </main>
 }
 
