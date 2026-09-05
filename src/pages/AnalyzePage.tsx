@@ -1,7 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Area, CartesianGrid, ComposedChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import StrategyRecommendations from '../components/StrategyRecommendations'
 import AIAnalyst from '../components/AIAnalyst'
 import { buildAnalysisContext } from '../lib/analysisContext'
 import { daysToExpiry, formatCompactExpiry, formatExpiry, formatNumber, formatUsd, parseOrderNumber, parseStrikeList } from '../lib/formatters'
@@ -21,9 +20,8 @@ export default function AnalyzePage() {
   const navigate = useNavigate(), [params] = useSearchParams(), [data, setData] = useState<ExplorerData | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState<string | null>(null), [selected, setSelected] = useState<string | null>(null), applied = useRef(false), lastRequestedId = useRef<string | null>(null)
   useEffect(() => { let live = true; loadExplorerData().then(result => { if (live) setData(result) }).catch(reason => { if (live) setError(reason instanceof Error ? reason.message : 'Unable to load live analysis data.') }).finally(() => { if (live) setLoading(false) }); return () => { live = false } }, [])
   const orders = data?.orders ?? []
-  // Same-route navigations (e.g. Strategy Ideas' "Analyze this order →") reuse this component
-  // instance rather than remounting it, so a later ?order= change must still be honored even after
-  // the initial-mount restore-from-sessionStorage below has already run once.
+  // Same-route navigations reuse this component instance rather than remounting it, so a later
+  // ?order= change must still be honored after the initial sessionStorage restore has run once.
   useEffect(() => {
     if (!orders.length) return
     const requestedId = params.get('order')
@@ -50,8 +48,19 @@ export default function AnalyzePage() {
     {order && data?.errors.map(message => <div className="analyze-notice" role="status" key={message}>{message}</div>)}
     {!order ? <AnalyzeEmpty orders={orders} onAnalyze={id => navigate(`/analyze?order=${encodeURIComponent(id)}`)} onBrowse={() => navigate('/markets')} loading={loading} />
       : <TradeAnalysis order={order} marketData={data?.marketData} analystContext={analystContext} />}
-    {order && orders.length > 0 && <StrategyRecommendations orders={orders} marketData={data?.marketData} />}
+    {order && <StrategyLabHandoff />}
   </div></main>
+}
+
+function StrategyLabHandoff() {
+  const navigate = useNavigate()
+  return <section className="analyze-strategy-handoff" aria-labelledby="analyze-strategy-handoff-title">
+    <div className="analyze-strategy-handoff-copy">
+      <h2 id="analyze-strategy-handoff-title">Looking for a strategy instead?</h2>
+      <p>Compare bullish, bearish and neutral approaches<br />using live OptionBook opportunities.</p>
+    </div>
+    <button type="button" onClick={() => navigate('/portfolio')}>Open Strategy Lab <span aria-hidden="true">→</span></button>
+  </section>
 }
 
 function AnalyzeEmpty({ orders, onAnalyze, onBrowse, loading }: { orders: ExplorerOrder[]; onAnalyze: (id: string) => void; onBrowse: () => void; loading: boolean }) {

@@ -111,6 +111,12 @@
 .analyze-dashboard .ad-chart-unavailable h3 { font-size: 16px; }
 .analyze-dashboard .ad-chart-unavailable p { max-width: 480px; color: #9bb1c5; line-height: 1.7; padding: 0 20px; }
 .analyze-dashboard .ad-table-empty { height: 200px; text-align: center; color: #9bb1c5; }
+.analyze-strategy-handoff { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 128px; margin-top: 0; padding: 22px 26px; border: 1px solid #1b4651; border-radius: 10px; background: linear-gradient(110deg, rgba(10, 37, 51, .9), rgba(7, 24, 39, .96)); }
+.analyze-strategy-handoff-copy h2 { margin: 0; color: #e4eef5; font-size: 16px; line-height: 1.35; }
+.analyze-strategy-handoff-copy p { margin: 7px 0 0; color: #9eb4c4; font-size: 12px; line-height: 1.55; }
+.analyze-strategy-handoff button { flex-shrink: 0; border: 1px solid #2b8e8a; border-radius: 7px; background: rgba(24, 103, 105, .2); padding: 10px 14px; color: #5de3d0; font-size: 12px; font-weight: 700; }
+.analyze-strategy-handoff button:hover { border-color: #4be8d4; background: rgba(35, 147, 137, .25); }
+.analyze-strategy-handoff button:focus-visible { outline: 2px solid #04ddcf; outline-offset: 4px; }
 @media (max-width: 1400px) {
   .analyze-page:has(.analyze-dashboard) > .analyze-shell { padding: 20px; }
   .analyze-dashboard { gap: 14px; grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr); }
@@ -142,4 +148,8 @@
 @media (max-width: 420px) {
   .analyze-dashboard .ad-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .analyze-dashboard .ad-order-summary dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .analyze-strategy-handoff { align-items: flex-start; flex-direction: column; gap: 14px; min-height: 0; padding: 18px; }
+  .analyze-strategy-handoff button { width: 100%; }
 }
