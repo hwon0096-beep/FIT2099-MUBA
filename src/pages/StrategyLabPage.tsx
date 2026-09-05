@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { NutIcon } from '../components/VisualSystem'
 import PremiumUnlockModal from '../components/PremiumUnlockModal'
 import SavedStrategiesSection from '../components/SavedStrategiesSection'
@@ -12,8 +12,6 @@ import { loadExplorerData, type ExplorerData, type ExplorerOrder } from '../lib/
 import { defaultPaperContract, paperPositions, paperSummary, recentPaperTrades, type PaperContract, type PaperOptionSide } from '../data/paperTradingMockData'
 import '../styles/strategy-lab.css'
 import '../styles/strategy-lab-compact.css'
-
-const formatUsdc = (value: number) => `${value.toLocaleString('en-US')} USDC`
 
 type StrategyLabTab = 'overview' | 'paper-trading' | 'saved-strategies' | 'compare'
 // Static: identifies each tab (used for both the activeTab check and the button's key) alongside
@@ -31,6 +29,7 @@ interface ChainLeg { bid?: number; ask?: number }
 interface ChainRow { strike: number; expiry: string; asset: string; call: ChainLeg; put: ChainLeg }
 const CHAIN_PAGE_SIZE = 25
 const STARTING_VIRTUAL_BALANCE = 10000
+const RECENT_TRADES_PREVIEW_COUNT = 5
 
 // A real confirmed paper trade — created only from Confirm Paper Buy, never mock data. Stores raw
 // numbers/timestamps rather than pre-formatted strings so daysToExpiry/formatNumber (the same
@@ -44,10 +43,16 @@ interface OpenPaperPosition {
   entryDateMs: number
   quantity: number
   entryCost: number
+  // 'closed' positions stay in this array rather than being removed — paper trading has no real
+  // settlement, so "closing" can't honestly refund anything without a live repricing feed to know
+  // what it would even be worth. virtualBalance's reduce below deliberately does NOT filter by
+  // status, so a closed position's entryCost keeps counting against the balance forever, exactly
+  // like a real spent premium would.
+  status: 'open' | 'closed'
 }
 // currentValue always equals entryCost (pnl always 0) — there's no live repricing feed for an
 // arbitrary held paper position, so this deliberately never fabricates a mark-to-market number.
-interface RecentPaperTradeEntry { id: string; label: string; dateMs: number; amount: number; status: 'Opened' }
+interface RecentPaperTradeEntry { id: string; label: string; dateMs: number; amount: number; status: 'Opened' | 'Closed' }
 
 function orderAsset(order: ExplorerOrder): string { return order.asset.trim().toUpperCase() || 'UNKNOWN' }
 
@@ -89,12 +94,17 @@ export default function StrategyLabPage() {
   const [assetFilter, setAssetFilter] = useState('ALL')
   const [expiryFilter, setExpiryFilter] = useState('ALL')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('ALL')
+  const [tradeableOnly, setTradeableOnly] = useState(false)
   const [visibleCount, setVisibleCount] = useState(CHAIN_PAGE_SIZE)
   const [showUnlock, setShowUnlock] = useState(false)
   const [activeTab, setActiveTab] = useState<StrategyLabTab>('paper-trading')
   const [openPositions, setOpenPositions] = useState<OpenPaperPosition[]>([])
   const [recentTrades, setRecentTrades] = useState<RecentPaperTradeEntry[]>([])
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [justViewedPortfolio, setJustViewedPortfolio] = useState(false)
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
+  const [showPortfolioModal, setShowPortfolioModal] = useState(false)
+  const [showHowItWorks, setShowHowItWorks] = useState(false)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -133,6 +143,9 @@ export default function StrategyLabPage() {
   // to a permanently empty table.
   useEffect(() => { if (assetFilter !== 'ALL' && !assets.includes(assetFilter)) setAssetFilter('ALL') }, [assets, assetFilter])
   useEffect(() => { if (expiryFilter !== 'ALL' && !expiries.includes(expiryFilter)) setExpiryFilter('ALL') }, [expiries, expiryFilter])
+  // Brief highlight flash on the Open Positions section after "View Paper Portfolio" scrolls to
+  // it — purely visual, clears itself so it doesn't linger as permanent state.
+  useEffect(() => { if (!justViewedPortfolio) return; const timer = setTimeout(() => setJustViewedPortfolio(false), 1600); return () => clearTimeout(timer) }, [justViewedPortfolio])
 
   const chainOrders = useMemo(() => vanillaOrders
     .filter((order) => assetFilter === 'ALL' || orderAsset(order) === assetFilter)
@@ -159,7 +172,13 @@ export default function StrategyLabPage() {
     return [...byKey.values()].sort((a, b) => a.strike - b.strike || Number(a.expiry) - Number(b.expiry))
   }, [chainOrders])
 
-  const visibleRows = useMemo(() => chainRows.filter((row) => String(row.strike).includes(search.replaceAll(',', '').trim())), [chainRows, search])
+  // Folded into the same pipeline totalRows/pagedRows are derived from (not applied after
+  // pagination) so "Load more"'s remaining count stays consistent with what's actually filtered,
+  // exactly like the existing search filter already does.
+  const visibleRows = useMemo(() => chainRows
+    .filter((row) => String(row.strike).includes(search.replaceAll(',', '').trim()))
+    .filter((row) => !tradeableOnly || row.call.ask !== undefined || row.put.ask !== undefined),
+  [chainRows, search, tradeableOnly])
 
   const spreadTableOrders = useMemo(() => spreadOrders
     .filter((order) => assetFilter === 'ALL' || orderAsset(order) === assetFilter)
@@ -167,7 +186,7 @@ export default function StrategyLabPage() {
     .filter((order) => describeSpread(order).label === typeFilter),
   [spreadOrders, assetFilter, expiryFilter, typeFilter])
 
-  useEffect(() => { setVisibleCount(CHAIN_PAGE_SIZE) }, [assetFilter, expiryFilter, typeFilter, search])
+  useEffect(() => { setVisibleCount(CHAIN_PAGE_SIZE) }, [assetFilter, expiryFilter, typeFilter, search, tradeableOnly])
   const pagedRows = useMemo(() => visibleRows.slice(0, visibleCount), [visibleRows, visibleCount])
   const pagedSpreadTableOrders = useMemo(() => spreadTableOrders.slice(0, visibleCount), [spreadTableOrders, visibleCount])
   const totalRows = isSpreadMode ? spreadTableOrders.length : visibleRows.length
@@ -179,18 +198,46 @@ export default function StrategyLabPage() {
     // No trade-history endpoint backs a "last traded price" for a live order, so the ask (what a
     // paper buy would actually fill at) stands in for it here.
     setSelected({ asset: row.asset, type: side === 'call' ? 'Call' : 'Put', strike: row.strike, expiry: formatCompactExpiry(row.expiry), expiryRaw: row.expiry, last: leg.ask, ask: leg.ask })
+    // Paper Buy now collapses the old two-click flow (select, then separately click Simulate
+    // Trade) into one: selecting a real-ask row opens the preview modal immediately. The sidebar
+    // ticket's own Simulate Trade button is untouched and still opens the same modal for whatever
+    // was last selected, as a secondary path back into it after a Cancel.
+    setPreviewOpen(true)
   }
 
   // Same tested payoff.maxLossTotal the modal itself displays as "Estimated Cost" — called again
   // here (not threaded through as a prop) since it's the same pure function with the same inputs,
   // not a second implementation of the math.
   const virtualBalance = STARTING_VIRTUAL_BALANCE - openPositions.reduce((sum, position) => sum + position.entryCost, 0)
+  // Deliberately does NOT close the modal (no setPreviewOpen(false) here) — the modal now shows
+  // its own "Paper Trade Created" success view after confirming, and closes only when the user
+  // clicks Buy Another or View Paper Portfolio in that view.
   const confirmPaperBuy = () => {
     const entryCost = payoff.maxLossTotal(selected.ask, quantity)
     const id = `${selected.asset}-${selected.expiryRaw}-${selected.strike}-${Date.now()}`
-    setOpenPositions((current) => [{ id, asset: selected.asset, type: selected.type, strike: selected.strike, expiryRaw: selected.expiryRaw, entryDateMs: Date.now(), quantity, entryCost }, ...current])
+    setOpenPositions((current) => [{ id, asset: selected.asset, type: selected.type, strike: selected.strike, expiryRaw: selected.expiryRaw, entryDateMs: Date.now(), quantity, entryCost, status: 'open' }, ...current])
     setRecentTrades((current) => [{ id, label: `${selected.asset} ${selected.type} $${selected.strike.toLocaleString()}`, dateMs: Date.now(), amount: -entryCost, status: 'Opened' }, ...current])
-    setPreviewOpen(false)
+  }
+  // Marks closed rather than removing — see the status field's comment on OpenPaperPosition for
+  // why (no refund without a live feed to know what closing would even be worth). Also logs a
+  // real "Closed" entry into recentTrades (amount 0 — no live feed means there's no honest exit
+  // value to record), so the trade history actually reflects both real lifecycle events instead
+  // of only ever recording "Opened".
+  const closePosition = (id: string) => {
+    const position = openPositions.find((existing) => existing.id === id)
+    setOpenPositions((current) => current.map((existing) => existing.id === id ? { ...existing, status: 'closed' as const } : existing))
+    if (position) setRecentTrades((current) => [{ id: `${id}-closed-${Date.now()}`, label: `${position.asset} ${position.type} $${position.strike.toLocaleString()}`, dateMs: Date.now(), amount: 0, status: 'Closed' }, ...current])
+  }
+  // Purely in-memory state (confirmed no localStorage exists for any of this) — clearing
+  // openPositions is enough on its own to bring virtualBalance back to STARTING_VIRTUAL_BALANCE,
+  // since that's a derived value, not separate state to reset. Deliberately does not touch
+  // selected/selectedKey/quantity (the "Last Selected" ticket) — that's just a UI convenience
+  // reference, not part of what was actually spent, so it's out of scope for what "reset" means
+  // here.
+  const resetPaperAccount = () => {
+    setOpenPositions([])
+    setRecentTrades([])
+    setShowResetConfirm(false)
   }
 
   // "No trades yet" shows the original demo rows as a starting state, exactly as before; the
@@ -201,11 +248,15 @@ export default function StrategyLabPage() {
   // total P&L across any set of them is always exactly 0 right now — stated directly rather than
   // writing a "computation" that only ever produces zero.
   const totalPaperPnl = 0
+  // "Open Positions" here means currently open, not every position ever created — a closed one
+  // still counts against virtualBalance above (see status field's comment) but no longer counts
+  // as an open position.
+  const openPositionCount = openPositions.filter((position) => position.status === 'open').length
   const summaryItems = hasRealTrades
     ? [
         { label: 'Virtual Balance', value: `${formatNumber(virtualBalance, 2)} USDC`, detail: 'Simulated account' },
         { label: 'Total Paper P&L', value: `${formatNumber(totalPaperPnl, 2)} USDC`, detail: 'No live repricing yet' },
-        { label: 'Open Positions', value: String(openPositions.length), detail: 'Live' },
+        { label: 'Open Positions', value: String(openPositionCount), detail: 'Live' },
       ]
     : paperSummary.slice(0, 3)
 
@@ -215,27 +266,30 @@ export default function StrategyLabPage() {
       <div className="strategy-lab__legacy-hero">
       <div className="strategy-lab__intro"><p className="eyebrow">STRATEGY LAB</p><h1>Paper Trading</h1><p>Practice trading real Thetanuts options with virtual funds before going live. Test strategies, compare scenarios, and build confidence.</p></div>
       <div className="strategy-lab__art" aria-hidden="true"><i /><i /><i /></div>
-      <section className="strategy-lab__safety"><NutIcon name="shield" /><div><h2>No real funds at risk</h2><p>All trades are simulated with virtual USDC using live Thetanuts market data. Nothing you do here affects your wallet.</p><button type="button">Learn more →</button></div></section>
+      <section className="strategy-lab__safety"><NutIcon name="shield" /><div><h2>No real funds at risk</h2><p>All trades are simulated with virtual USDC using live Thetanuts market data. Nothing you do here affects your wallet.</p><button type="button" className="text-action" onClick={() => setShowHowItWorks(true)}>Learn more →</button></div></section>
       </div>
     </header>
     <nav className="strategy-lab__tabs" aria-label="Strategy Lab sections">{STRATEGY_LAB_TABS.map(({ value, icon, label }) => <button type="button" key={value} className={activeTab === value ? 'active' : ''} onClick={() => setActiveTab(value)}><NutIcon name={icon} />{label}</button>)}</nav>
     {activeTab === 'paper-trading' && <div className="strategy-lab__workspace">
       <div className="strategy-lab__main">
-        <section className="paper-summary" aria-label="Simulated account summary">{summaryItems.map((item, index) => <article key={item.label}><span className="summary-icon"><NutIcon name={index === 0 ? 'wallet' : index === 1 ? 'trend' : 'contract'} /></span><div><small>{item.label}</small><strong className={'tone' in item && item.tone === 'positive' ? 'pnl-positive' : ''}>{item.value}</strong><em className={'tone' in item && item.tone === 'positive' ? 'pnl-positive' : ''}>{index === 2 ? 'positions' : item.detail}</em></div></article>)}</section>
-        <OptionsChain rows={pagedRows} spreadRows={pagedSpreadTableOrders} totalRows={totalRows} assets={assets} expiries={expiries} assetFilter={assetFilter} expiryFilter={expiryFilter} typeFilter={typeFilter} search={search} selectedKey={selectedKey} loading={loading} error={error} premium={tier === 'premium'} onAsset={setAssetFilter} onExpiry={setExpiryFilter} onType={(next) => { if (isPremiumChainType(next) && tier !== 'premium') setShowUnlock(true); else setTypeFilter(next) }} onSearch={setSearch} onSelect={selectContract} onLoadMore={() => setVisibleCount((count) => count + CHAIN_PAGE_SIZE)} />
-        <OpenPaperPositions positions={openPositions} />
+        <section className="paper-summary" aria-label="Simulated account summary">{summaryItems.map((item, index) => <article key={item.label}><span className="summary-icon"><NutIcon name={index === 0 ? 'wallet' : index === 1 ? 'trend' : 'contract'} /></span><div><small>{item.label}</small><strong className={'tone' in item && item.tone === 'positive' ? 'pnl-positive' : ''}>{item.value}</strong><em className={'tone' in item && item.tone === 'positive' ? 'pnl-positive' : ''}>{index === 2 ? 'positions' : item.detail}</em>{index === 0 && hasRealTrades && <button type="button" className="text-action paper-summary__reset" onClick={() => setShowResetConfirm(true)}>Reset Paper Account</button>}</div></article>)}</section>
+        <OptionsChain rows={pagedRows} spreadRows={pagedSpreadTableOrders} totalRows={totalRows} assets={assets} expiries={expiries} assetFilter={assetFilter} expiryFilter={expiryFilter} typeFilter={typeFilter} search={search} tradeableOnly={tradeableOnly} selectedKey={selectedKey} loading={loading} error={error} premium={tier === 'premium'} onAsset={setAssetFilter} onExpiry={setExpiryFilter} onType={(next) => { if (isPremiumChainType(next) && tier !== 'premium') setShowUnlock(true); else setTypeFilter(next) }} onSearch={setSearch} onTradeableOnlyChange={setTradeableOnly} onSelect={selectContract} onLoadMore={() => setVisibleCount((count) => count + CHAIN_PAGE_SIZE)} />
+        <OpenPaperPositions positions={openPositions} onClosePosition={closePosition} highlighted={justViewedPortfolio} />
       </div>
-      <aside className="strategy-lab__side"><PaperOrderTicket contract={selected} quantity={quantity} onQuantityChange={setQuantity} virtualBalance={virtualBalance} canSimulate={selectedKey !== null} onSimulate={() => setPreviewOpen(true)} /><RecentPaperTrades trades={recentTrades} /></aside>
+      <aside className="strategy-lab__side"><PaperOrderTicket contract={selected} canSimulate={selectedKey !== null} onSimulate={() => setPreviewOpen(true)} /><RecentPaperTrades trades={recentTrades} onViewMore={() => setShowPortfolioModal(true)} /></aside>
     </div>}
     {activeTab === 'saved-strategies' && <SavedStrategiesSection orders={data ? orders : null} />}
     {activeTab === 'overview' && <SimpleStrategyOverview />}
     {activeTab === 'compare' && <CompareStrategies />}
     {showUnlock && <PremiumUnlockModal onClose={() => setShowUnlock(false)} />}
-    {previewOpen && <PaperTradePreviewModal contract={selected} quantity={quantity} onQuantityChange={setQuantity} onCancel={() => setPreviewOpen(false)} onConfirm={confirmPaperBuy} />}
+    {previewOpen && <PaperTradePreviewModal contract={selected} quantity={quantity} onQuantityChange={setQuantity} virtualBalance={virtualBalance} onCancel={() => setPreviewOpen(false)} onConfirm={confirmPaperBuy} onViewPortfolio={() => { document.getElementById('open-paper-positions')?.scrollIntoView({ behavior: 'smooth' }); setJustViewedPortfolio(true) }} />}
+    {showResetConfirm && <ResetPaperAccountModal onConfirm={resetPaperAccount} onCancel={() => setShowResetConfirm(false)} />}
+    {showPortfolioModal && <PaperPortfolioModal positions={openPositions} trades={recentTrades} onClosePosition={closePosition} onCancel={() => setShowPortfolioModal(false)} />}
+    {showHowItWorks && <HowPaperTradingWorksModal onCancel={() => setShowHowItWorks(false)} />}
   </main>
 }
 
-function OptionsChain({ rows, spreadRows, totalRows, assets, expiries, assetFilter, expiryFilter, typeFilter, search, selectedKey, loading, error, premium, onAsset, onExpiry, onType, onSearch, onSelect, onLoadMore }: { rows: ChainRow[]; spreadRows: ExplorerOrder[]; totalRows: number; assets: string[]; expiries: string[]; assetFilter: string; expiryFilter: string; typeFilter: TypeFilter; search: string; selectedKey: string | null; loading: boolean; error: string | null; premium: boolean; onAsset: (value: string) => void; onExpiry: (value: string) => void; onType: (value: TypeFilter) => void; onSearch: (value: string) => void; onSelect: (row: ChainRow, side: PaperOptionSide) => void; onLoadMore: () => void }) {
+function OptionsChain({ rows, spreadRows, totalRows, assets, expiries, assetFilter, expiryFilter, typeFilter, search, tradeableOnly, selectedKey, loading, error, premium, onAsset, onExpiry, onType, onSearch, onTradeableOnlyChange, onSelect, onLoadMore }: { rows: ChainRow[]; spreadRows: ExplorerOrder[]; totalRows: number; assets: string[]; expiries: string[]; assetFilter: string; expiryFilter: string; typeFilter: TypeFilter; search: string; tradeableOnly: boolean; selectedKey: string | null; loading: boolean; error: string | null; premium: boolean; onAsset: (value: string) => void; onExpiry: (value: string) => void; onType: (value: TypeFilter) => void; onSearch: (value: string) => void; onTradeableOnlyChange: (value: boolean) => void; onSelect: (row: ChainRow, side: PaperOptionSide) => void; onLoadMore: () => void }) {
   const isSpreadMode = isSpreadType(typeFilter)
   // With no dedicated Expiry column, a strike shown under more than one expiry needs the expiry
   // spelled out inline so two different contracts don't read as the same row.
@@ -243,27 +297,129 @@ function OptionsChain({ rows, spreadRows, totalRows, assets, expiries, assetFilt
   const showCalls = !isSpreadMode && typeFilter !== 'PUT'
   const showPuts = !isSpreadMode && typeFilter !== 'CALL'
   const shownCount = isSpreadMode ? spreadRows.length : rows.length
-  return <section className="strategy-card strategy-card--chain"><div className="strategy-card__head"><div><h2>Options Chain</h2><p>Browse Thetanuts options and place simulated trades.</p></div><span className="demo-label"><i />Live data</span></div><div className="chain-filters"><label>Asset<select value={assetFilter} onChange={(event) => onAsset(event.target.value)}><option value="ALL">All assets</option>{assets.map((asset) => <option key={asset} value={asset}>{asset}</option>)}</select></label><label>Expiry<select value={expiryFilter} onChange={(event) => onExpiry(event.target.value)}><option value="ALL">All expiries</option>{expiries.map((expiry) => <option key={expiry} value={expiry}>{formatCompactExpiry(expiry)}</option>)}</select></label><label>Type<select value={typeFilter} onChange={(event) => onType(event.target.value as TypeFilter)}><optgroup label="Option Type"><option value="ALL">All</option><option value="CALL">Call</option><option value="PUT">Put</option></optgroup><optgroup label="Strategies"><option value="Call Spread">{premium ? 'Call Spread' : '🔒 Call Spread'}</option><option value="Put Spread">{premium ? 'Put Spread' : '🔒 Put Spread'}</option><option value="Butterfly">{premium ? 'Butterfly' : '🔒 Butterfly'}</option><option value="4-leg structure">{premium ? '4-leg structure' : '🔒 4-leg structure'}</option></optgroup></select></label>{!isSpreadMode && <label className="chain-filters__search">Search<input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Search strike or order ID..." /></label>}</div><div className="strategy-table-wrap">{loading && !shownCount ? <p>Loading live OptionBook orders…</p> : error ? <p role="alert">Unable to load live options data: {error}</p> : !shownCount ? <p>No live orders match the current filters.</p> : isSpreadMode ? <table><thead><tr><th>Asset</th><th>Structure</th><th>Expiry</th><th>Legs</th><th>Combined Premium</th><th>Side</th><th>Available Size</th></tr></thead><tbody>{spreadRows.map((order) => { const { label, legs } = describeSpread(order); return <tr key={order.id}><td><strong>{orderAsset(order)}</strong></td><td>{label}</td><td>{formatCompactExpiry(order.expiry)}</td><td>{legs}</td><td>{parseOrderNumber(order.pricePerContract).toLocaleString()} <small>{order.collateral}</small></td><td>{order.side === 'BUY' ? 'Buy' : order.side === 'SELL' ? 'Sell' : '—'}</td><td>{order.availableAmount}</td></tr> })}</tbody></table> : <table className="options-chain-table"><thead><tr>{showCalls && <th colSpan={3} className="call-heading">Calls (Buy)</th>}<th rowSpan={2}>Strike</th>{showPuts && <th colSpan={3} className="put-heading">Puts (Buy)</th>}</tr><tr>{showCalls && <><th>Bid</th><th>Ask</th><th aria-label="Call action" /></>}{showPuts && <><th>Bid</th><th>Ask</th><th aria-label="Put action" /></>}</tr></thead><tbody>{rows.map((row) => { const key = `${row.strike}-${row.expiry}`; return <tr key={key} className={key === selectedKey ? 'selected' : ''}>{showCalls && <><td>{row.call.bid !== undefined ? row.call.bid.toLocaleString() : '—'}</td><td>{row.call.ask !== undefined ? row.call.ask.toLocaleString() : '—'}</td><td><button type="button" className="paper-buy paper-buy--call" disabled={row.call.ask === undefined} onClick={() => onSelect(row, 'call')}>Paper Buy</button></td></>}<td className="strike">{row.strike.toLocaleString()}{showExpiryHint && <small>{formatCompactExpiry(row.expiry)}</small>}</td>{showPuts && <><td>{row.put.bid !== undefined ? row.put.bid.toLocaleString() : '—'}</td><td>{row.put.ask !== undefined ? row.put.ask.toLocaleString() : '—'}</td><td><button type="button" className="paper-buy paper-buy--put" disabled={row.put.ask === undefined} onClick={() => onSelect(row, 'put')}>Paper Buy</button></td></>}</tr> })}</tbody></table>}</div>{shownCount < totalRows && <button type="button" className="text-action chain-load-more" onClick={onLoadMore}>Load more ({totalRows - shownCount} remaining)</button>}</section>
+  return <section className="strategy-card strategy-card--chain"><div className="strategy-card__head"><div><h2>Options Chain</h2><p>Browse Thetanuts options and place simulated trades.</p></div><span className="demo-label"><i />Live data</span></div><div className="chain-filters"><label>Asset<select value={assetFilter} onChange={(event) => onAsset(event.target.value)}><option value="ALL">All assets</option>{assets.map((asset) => <option key={asset} value={asset}>{asset}</option>)}</select></label><label>Expiry<select value={expiryFilter} onChange={(event) => onExpiry(event.target.value)}><option value="ALL">All expiries</option>{expiries.map((expiry) => <option key={expiry} value={expiry}>{formatCompactExpiry(expiry)}</option>)}</select></label><label>Type<select value={typeFilter} onChange={(event) => onType(event.target.value as TypeFilter)}><optgroup label="Option Type"><option value="ALL">All</option><option value="CALL">Call</option><option value="PUT">Put</option></optgroup><optgroup label="Strategies"><option value="Call Spread">{premium ? 'Call Spread' : '🔒 Call Spread'}</option><option value="Put Spread">{premium ? 'Put Spread' : '🔒 Put Spread'}</option><option value="Butterfly">{premium ? 'Butterfly' : '🔒 Butterfly'}</option><option value="4-leg structure">{premium ? '4-leg structure' : '🔒 4-leg structure'}</option></optgroup></select></label>{!isSpreadMode && <label className="chain-filters__search">Search<input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Search strike or order ID..." /></label>}{!isSpreadMode && <label className="chain-filters__toggle">Tradeable only<span className="chain-filters__toggle-control"><input type="checkbox" checked={tradeableOnly} onChange={(event) => onTradeableOnlyChange(event.target.checked)} /><em>Hide rows with no quote</em></span></label>}</div><div className="strategy-table-wrap">{loading && !shownCount ? <p>Loading live OptionBook orders…</p> : error ? <p role="alert">Unable to load live options data: {error}</p> : !shownCount ? <p>No live orders match the current filters.</p> : isSpreadMode ? <table><thead><tr><th>Asset</th><th>Structure</th><th>Expiry</th><th>Legs</th><th>Combined Premium</th><th>Side</th><th>Available Size</th></tr></thead><tbody>{spreadRows.map((order) => { const { label, legs } = describeSpread(order); return <tr key={order.id}><td><strong>{orderAsset(order)}</strong></td><td>{label}</td><td>{formatCompactExpiry(order.expiry)}</td><td>{legs}</td><td>{parseOrderNumber(order.pricePerContract).toLocaleString()} <small>{order.collateral}</small></td><td>{order.side === 'BUY' ? 'Buy' : order.side === 'SELL' ? 'Sell' : '—'}</td><td>{order.availableAmount}</td></tr> })}</tbody></table> : <table className="options-chain-table"><thead><tr>{showCalls && <th colSpan={3} className="call-heading">Calls (Buy)</th>}<th rowSpan={2}>Strike</th>{showPuts && <th colSpan={3} className="put-heading">Puts (Buy)</th>}</tr><tr>{showCalls && <><th>Bid</th><th>Ask</th><th aria-label="Call action" /></>}{showPuts && <><th>Bid</th><th>Ask</th><th aria-label="Put action" /></>}</tr></thead><tbody>{rows.map((row) => { const key = `${row.strike}-${row.expiry}`; return <tr key={key} className={key === selectedKey ? 'selected' : ''}>{showCalls && <><td>{row.call.bid !== undefined ? row.call.bid.toLocaleString() : '—'}</td><td>{row.call.ask !== undefined ? row.call.ask.toLocaleString() : '—'}</td><td><button type="button" className="paper-buy paper-buy--call" disabled={row.call.ask === undefined} onClick={() => onSelect(row, 'call')}>Paper Buy</button></td></>}<td className="strike">{row.strike.toLocaleString()}{showExpiryHint && <small>{formatCompactExpiry(row.expiry)}</small>}</td>{showPuts && <><td>{row.put.bid !== undefined ? row.put.bid.toLocaleString() : '—'}</td><td>{row.put.ask !== undefined ? row.put.ask.toLocaleString() : '—'}</td><td><button type="button" className="paper-buy paper-buy--put" disabled={row.put.ask === undefined} onClick={() => onSelect(row, 'put')}>Paper Buy</button></td></>}</tr> })}</tbody></table>}</div>{shownCount < totalRows && <button type="button" className="text-action chain-load-more" onClick={onLoadMore}>Load more ({totalRows - shownCount} remaining)</button>}</section>
 }
 
-function PaperOrderTicket({ contract, quantity, onQuantityChange, virtualBalance, canSimulate, onSimulate }: { contract: PaperContract; quantity: number; onQuantityChange: (quantity: number) => void; virtualBalance: number; canSimulate: boolean; onSimulate: () => void }) {
-  // Same tested payoff.maxLossTotal the preview modal itself uses — not the ad hoc
-  // contract.ask * quantity this used to compute inline.
-  const total = payoff.maxLossTotal(contract.ask, quantity)
-  return <aside className="strategy-card strategy-card--ticket"><div className="strategy-card__head"><h2>Paper Order Ticket <em>Simulated</em></h2><button type="button" className="text-action">Clear</button></div><div className="ticket-contract"><strong>{contract.asset} ${contract.strike.toLocaleString()} {contract.type}</strong><span className={`option-type ${contract.type === 'Call' ? 'call' : 'put'}`}>{contract.type}</span></div><dl className="ticket-details"><div><dt>Asset</dt><dd>{contract.asset}</dd></div><div><dt>Type</dt><dd>{contract.type}</dd></div><div><dt>Strike</dt><dd>${contract.strike.toLocaleString()}</dd></div><div><dt>Expiry</dt><dd>{contract.expiry}</dd></div><div><dt>Ask Price</dt><dd>{formatUsdc(contract.ask)}</dd></div></dl><div className="quantity"><span>Quantity / Contracts</span><div><button type="button" onClick={() => onQuantityChange(Math.max(1, quantity - 1))}>−</button><output>{quantity}</output><button type="button" onClick={() => onQuantityChange(quantity + 1)}>+</button></div><small>1 contract = 1 option</small></div><div className="ticket-totals"><p>Estimated Cost<strong>{formatUsdc(total)}</strong></p><p>Virtual Balance After Trade<strong>{formatUsdc(virtualBalance - total)}</strong></p></div><button type="button" className="simulate-trade" disabled={!canSimulate} onClick={onSimulate}>Simulate Trade <NutIcon name="arrow" /></button>{!canSimulate && <p className="ticket-disclaimer">Select a live option from the chain above (Paper Buy) to enable this.</p>}<p className="ticket-disclaimer">This is a simulated paper trade using virtual USDC. No real funds will be spent.</p></aside>
+// Paper Buy now opens the preview modal directly (see selectContract), so this card is no longer
+// the primary way to act on a contract — it's a compact "last selected" reference, with Simulate
+// Trade as a secondary path back into the same modal (e.g. after a Cancel). The full breakdown
+// (strike/expiry/ask/quantity/cost) lived here before that change; it's now the modal's job alone,
+// so it isn't duplicated in both places.
+function PaperOrderTicket({ contract, canSimulate, onSimulate }: { contract: PaperContract; canSimulate: boolean; onSimulate: () => void }) {
+  return <aside className="strategy-card strategy-card--ticket"><div className="strategy-card__head"><h2>Last Selected <em>Simulated</em></h2><button type="button" className="text-action">Clear</button></div><p className="ticket-disclaimer">This is the contract you previously selected. Use Simulate Trade to review and confirm it again.</p><div className="ticket-contract"><strong>{contract.asset} ${contract.strike.toLocaleString()} {contract.type}</strong><span className={`option-type ${contract.type === 'Call' ? 'call' : 'put'}`}>{contract.type}</span></div><button type="button" className="simulate-trade" disabled={!canSimulate} onClick={onSimulate}>Simulate Trade <NutIcon name="arrow" /></button>{!canSimulate && <p className="ticket-disclaimer">Select a live option from the chain above (Paper Buy) to enable this.</p>}<p className="ticket-disclaimer">This is a simulated paper trade using virtual USDC. No real funds will be spent.</p></aside>
 }
 
 // Real rows (once any exist) entirely replace the mock demo rows — never both in the same table.
 // A real position's current value always equals its entry cost (no live repricing feed), so its
 // Paper P&L is always +0.00, shown honestly rather than mixed in with the mock rows' fake P&L.
-function OpenPaperPositions({ positions }: { positions: OpenPaperPosition[] }) {
+function OpenPaperPositions({ positions, onClosePosition, highlighted }: { positions: OpenPaperPosition[]; onClosePosition: (id: string) => void; highlighted: boolean }) {
+  // "Any real trade ever" gates mock-vs-real display (never revert to mock rows once real ones
+  // have existed); the table itself only lists currently-open ones, since a closed position no
+  // longer belongs under "Open Paper Positions" even though it still exists in state.
   const real = positions.length > 0
-  return <section className="strategy-card strategy-card--positions"><div className="strategy-card__head"><h2>Open Paper Positions <small>({real ? positions.length : paperPositions.length})</small></h2><button type="button" className="text-action">View all →</button></div><div className="strategy-table-wrap"><table><thead><tr><th>Asset</th><th>Strategy</th><th>Entry Date</th><th>Days to Expiry</th><th>Entry Cost</th><th>Current Value</th><th>Paper P&amp;L</th><th>Status</th><th>Action</th></tr></thead><tbody>{real
-    ? positions.map((position) => <tr key={position.id}><td><strong>{position.asset}</strong></td><td><strong>{position.asset} {position.type} ${position.strike.toLocaleString()}</strong><small>{formatCompactExpiry(position.expiryRaw)} · ${position.strike.toLocaleString()} {position.type}</small></td><td>{new Date(position.entryDateMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td><td>{daysToExpiry(position.expiryRaw)}</td><td>{formatNumber(position.entryCost, 2)}</td><td>{formatNumber(position.entryCost, 2)}</td><td>+0.00<small>0.00%</small></td><td><span className="open-status">Open</span></td><td><button type="button" className="view-position">View</button></td></tr>)
+  const openOnly = positions.filter((position) => position.status === 'open')
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  return <section id="open-paper-positions" className={`strategy-card strategy-card--positions${highlighted ? ' just-viewed' : ''}`}><div className="strategy-card__head"><h2>Open Paper Positions <small>({real ? openOnly.length : paperPositions.length})</small></h2><button type="button" className="text-action">View all →</button></div><div className="strategy-table-wrap"><table><thead><tr><th>Asset</th><th>Strategy</th><th>Entry Date</th><th>Days to Expiry</th><th>Entry Cost</th><th>Current Value</th><th>Paper P&amp;L</th><th>Status</th><th>Action</th></tr></thead><tbody>{real
+    ? openOnly.map((position) => { const expanded = expandedId === position.id; return <Fragment key={position.id}>
+        <tr><td><strong>{position.asset}</strong></td><td><strong>{position.asset} {position.type} ${position.strike.toLocaleString()}</strong><small>{formatCompactExpiry(position.expiryRaw)} · ${position.strike.toLocaleString()} {position.type}</small></td><td>{new Date(position.entryDateMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td><td>{daysToExpiry(position.expiryRaw)}</td><td>{formatNumber(position.entryCost, 2)}</td><td>{formatNumber(position.entryCost, 2)}</td><td>+0.00<small>0.00%</small></td><td><span className="open-status">Open</span></td><td><button type="button" className="view-position" onClick={() => setExpandedId(expanded ? null : position.id)}>{expanded ? 'Hide Details' : 'View Details'}</button></td></tr>
+        {expanded && <tr className="position-detail-row"><td colSpan={9}><PositionDetailFields position={position} onClose={() => onClosePosition(position.id)} /></td></tr>}
+      </Fragment> })
     : paperPositions.map((position) => <tr key={position.strategy}><td><strong>{position.asset}</strong></td><td><strong>{position.strategy}</strong><small>{position.detail}</small></td><td>{position.entry}</td><td>{position.days}</td><td>{position.cost}</td><td>{position.value}</td><td className={position.positive ? 'pnl-positive' : 'pnl-negative'}>{position.pnl}<small>{position.change}</small></td><td><span className="open-status">Open</span></td><td><button type="button" className="view-position">View</button></td></tr>)}</tbody></table></div></section>
 }
 
-function RecentPaperTrades({ trades }: { trades: RecentPaperTradeEntry[] }) {
-  if (trades.length === 0) return <section className="strategy-card"><div className="strategy-card__head"><h2>Recent Paper Trades</h2><button type="button" className="text-action">View all →</button></div>{recentPaperTrades.map((trade) => <article className="recent-paper-trade" key={trade.strategy}><div><strong>{trade.strategy}</strong><small>{trade.date}</small></div><span className={trade.positive ? 'pnl-positive' : 'pnl-negative'}>{trade.amount}</span><em>{trade.status}</em></article>)}</section>
-  return <section className="strategy-card"><div className="strategy-card__head"><h2>Recent Paper Trades</h2><button type="button" className="text-action">View all →</button></div>{trades.map((trade) => <article className="recent-paper-trade" key={trade.id}><div><strong>{trade.label}</strong><small>{new Date(trade.dateMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</small></div><span className="pnl-negative">{formatNumber(trade.amount, 2)}</span><em>{trade.status}</em></article>)}</section>
+// Shared by the inline "View Details" row above and PaperPortfolioModal's Open Positions tab, so
+// the real-fields-only breakdown (and the honest no-live-feed note) is written once, not
+// duplicated between the two places it's shown.
+function PositionDetailFields({ position, onClose }: { position: OpenPaperPosition; onClose: () => void }) {
+  return <div className="position-detail"><dl><div><dt>Asset</dt><dd>{position.asset}</dd></div><div><dt>Expiry</dt><dd>{formatCompactExpiry(position.expiryRaw)}</dd></div><div><dt>Strike</dt><dd>${position.strike.toLocaleString()}</dd></div><div><dt>Quantity</dt><dd>{position.quantity}</dd></div></dl><dl><div><dt>Entry Premium</dt><dd>{formatNumber(position.entryCost / position.quantity, 2)} USDC</dd></div><div><dt>Entry Cost</dt><dd>{formatNumber(position.entryCost, 2)} USDC</dd></div><div><dt>Days to Expiry</dt><dd>{daysToExpiry(position.expiryRaw)}</dd></div></dl><p className="position-detail__note">ℹ P&amp;L tracking not yet available — there's no live repricing feed for open paper positions yet.</p><div className="position-detail__actions"><button type="button" className="modal-cancel" onClick={onClose}>Close Position</button></div></div>
+}
+
+// The button now always renders (previously it only appeared once trade count exceeded the
+// preview limit, which meant a demo user making just 1-2 trades never saw it at all — looking
+// broken rather than correctly hidden). It's disabled with a tooltip only when there's truly
+// nothing real to show yet; otherwise it opens the fuller PaperPortfolioModal rather than
+// toggling this card's own truncated list in place.
+function RecentPaperTrades({ trades, onViewMore }: { trades: RecentPaperTradeEntry[]; onViewMore: () => void }) {
+  if (trades.length === 0) return <section className="strategy-card"><div className="strategy-card__head"><h2>Recent Paper Trades</h2><button type="button" className="text-action" disabled title="No trades yet">View More Details</button></div>{recentPaperTrades.map((trade) => <article className="recent-paper-trade" key={trade.strategy}><div><strong>{trade.strategy}</strong><small>{trade.date}</small></div><span className={trade.positive ? 'pnl-positive' : 'pnl-negative'}>{trade.amount}</span><em>{trade.status}</em></article>)}</section>
+  const visible = trades.slice(0, RECENT_TRADES_PREVIEW_COUNT)
+  return <section className="strategy-card"><div className="strategy-card__head"><h2>Recent Paper Trades</h2><button type="button" className="text-action" onClick={onViewMore}>View More Details</button></div>{visible.map((trade) => <article className="recent-paper-trade" key={trade.id}><div><strong>{trade.label}</strong><small>{new Date(trade.dateMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</small></div><span className={trade.amount > 0 ? 'pnl-positive' : trade.amount < 0 ? 'pnl-negative' : ''}>{formatNumber(trade.amount, 2)}</span><em>{trade.status}</em></article>)}</section>
+}
+
+// Reuses the app-wide .modal-backdrop/.modal-panel/.modal-subtext/.modal-footer/.modal-cancel/
+// .modal-primary chrome already used by PremiumUnlockModal — zero new CSS needed. Destructive
+// confirmation gate for resetPaperAccount; the actual reset logic lives in StrategyLabPage.
+function ResetPaperAccountModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+  return <div className="modal-backdrop">
+    <section className="modal-panel">
+      <h2>Reset Paper Account?</h2>
+      <p className="modal-subtext">This will clear all your simulated positions and trade history, and reset your balance back to {STARTING_VIRTUAL_BALANCE.toLocaleString('en-US')} USDC. This can't be undone.</p>
+      <div className="modal-footer">
+        <button type="button" className="modal-cancel" onClick={onCancel}>Cancel</button>
+        <button type="button" className="modal-primary" onClick={onConfirm}>Reset Account</button>
+      </div>
+    </section>
+  </div>
+}
+
+// Reuses the app-wide .modal-backdrop/.modal-panel/.modal-header/.modal-close/.modal-footer/
+// .modal-primary chrome, plus .paper-info (already defined in strategy-lab.css but unused
+// anywhere in this file until now) for the bullet list — zero new CSS.
+function HowPaperTradingWorksModal({ onCancel }: { onCancel: () => void }) {
+  return <div className="modal-backdrop">
+    <section className="modal-panel">
+      <header className="modal-header"><h2>How Paper Trading Works</h2><button type="button" className="modal-close" onClick={onCancel} aria-label="Close">×</button></header>
+      <div className="strategy-card paper-info">
+        <ul>
+          <li><strong>Starting balance</strong>Every paper account starts at {STARTING_VIRTUAL_BALANCE.toLocaleString('en-US')} USDC, simulated only — no real funds or wallet are involved at any point.</li>
+          <li><strong>Live prices, simulated trades</strong>Option prices and quotes in the chain come from live Thetanuts market data — the prices are real, the trades placed here are not.</li>
+          <li><strong>Closing a position</strong>Closing marks a position "closed" without crediting back a market-based exit value, since there's no live repricing feed for held positions yet. This is a known limitation, not a bug.</li>
+          <li><strong>Starting over</strong>Reset Paper Account (next to Virtual Balance) restores the {STARTING_VIRTUAL_BALANCE.toLocaleString('en-US')} USDC starting balance and clears all simulated positions and trade history.</li>
+        </ul>
+      </div>
+      <div className="modal-footer">
+        <button type="button" className="modal-primary" onClick={onCancel}>Got it</button>
+      </div>
+    </section>
+  </div>
+}
+
+// Matches the reference mockup's structure (two tabs: Open Positions / Trade History), not its
+// exact numbers or the fields it fabricates (Current Mark, Unrealized P&L, % return, a
+// performance chart) — none of those have a real source without a live repricing feed, confirmed
+// absent again here, so they're omitted rather than invented. Reuses .modal-backdrop/.modal-panel/
+// .modal-header/.modal-close/.modal-subtext (already global) plus PositionDetailFields (already
+// built for the inline row) — only the tabs/card/body layout below is new CSS.
+function PaperPortfolioModal({ positions, trades, onClosePosition, onCancel }: { positions: OpenPaperPosition[]; trades: RecentPaperTradeEntry[]; onClosePosition: (id: string) => void; onCancel: () => void }) {
+  const [tab, setTab] = useState<'open' | 'history'>('open')
+  const openOnly = positions.filter((position) => position.status === 'open')
+  // A running balance, not P&L: folds the exact amounts already logged per trade (negative cost
+  // on Opened, 0 on Closed, since closing doesn't credit anything back — see closePosition's
+  // comment) into a running total, replayed oldest-first. This lands on exactly the same number
+  // virtualBalance would show at that point in history, since every open position has exactly one
+  // corresponding Opened entry — it's just a chronological view of data that already exists, not a
+  // new estimate.
+  let runningBalance = STARTING_VIRTUAL_BALANCE
+  const balanceAfterById = new Map(trades.slice().reverse().map((trade) => { runningBalance += trade.amount; return [trade.id, runningBalance] as const }))
+  return <div className="modal-backdrop">
+    <section className="modal-panel paper-portfolio-modal">
+      <header className="modal-header"><h2>Paper Portfolio</h2><button type="button" className="modal-close" onClick={onCancel} aria-label="Close">×</button></header>
+      <p className="modal-subtext">Review your simulated positions and trade history. Figures that would need a live repricing feed (current mark, unrealized P&amp;L) aren't available yet, so they're left out rather than estimated.</p>
+      <div className="paper-portfolio-modal__tabs">
+        <button type="button" className={tab === 'open' ? 'active' : ''} onClick={() => setTab('open')}>Open Positions ({openOnly.length})</button>
+        <button type="button" className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>Trade History ({trades.length})</button>
+      </div>
+      <div className="paper-portfolio-modal__body">
+        {tab === 'open'
+          ? (openOnly.length === 0
+              ? <p className="paper-portfolio-modal__empty">No open positions yet.</p>
+              : openOnly.map((position) => <article key={position.id} className="paper-portfolio-modal__card">
+                  <header><strong>{position.asset} {position.type}</strong><span className="open-status">Open</span></header>
+                  <PositionDetailFields position={position} onClose={() => onClosePosition(position.id)} />
+                </article>))
+          : (trades.length === 0
+              ? <p className="paper-portfolio-modal__empty">No trade history yet.</p>
+              : <div className="strategy-table-wrap"><table><thead><tr><th>Trade</th><th>Date</th><th>Amount</th><th>Balance After</th><th>Status</th></tr></thead><tbody>{trades.map((trade) => <tr key={trade.id}><td><strong>{trade.label}</strong></td><td>{new Date(trade.dateMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td><td className={trade.amount > 0 ? 'pnl-positive' : trade.amount < 0 ? 'pnl-negative' : ''}>{formatNumber(trade.amount, 2)}</td><td>{formatNumber(balanceAfterById.get(trade.id) ?? STARTING_VIRTUAL_BALANCE, 2)} USDC</td><td>{trade.status}</td></tr>)}</tbody></table></div>)}
+      </div>
+    </section>
+  </div>
 }
