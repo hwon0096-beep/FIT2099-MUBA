@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { NutIcon } from '../components/VisualSystem'
 import PremiumUnlockModal from '../components/PremiumUnlockModal'
+import SavedStrategiesSection from '../components/SavedStrategiesSection'
 import { useAccount } from '../context/AccountContext'
 import { formatCompactExpiry, parseOrderNumber, parseStrikeList } from '../lib/formatters'
 import { loadExplorerData, type ExplorerData, type ExplorerOrder } from '../lib/thetanuts'
@@ -9,6 +10,17 @@ import '../styles/strategy-lab.css'
 import '../styles/strategy-lab-compact.css'
 
 const formatUsdc = (value: number) => `${value.toLocaleString('en-US')} USDC`
+
+type StrategyLabTab = 'overview' | 'paper-trading' | 'saved-strategies' | 'compare'
+// Static: identifies each tab (used for both the activeTab check and the button's key) alongside
+// its icon and display label, replacing the old label-string comparison the nav used to derive
+// (incorrectly) which single tab could ever be "active".
+const STRATEGY_LAB_TABS: { value: StrategyLabTab; icon: 'radar' | 'board' | 'contract' | 'trend'; label: string }[] = [
+  { value: 'overview', icon: 'radar', label: 'Overview' },
+  { value: 'paper-trading', icon: 'board', label: 'Paper Trading' },
+  { value: 'saved-strategies', icon: 'contract', label: 'Saved Strategies' },
+  { value: 'compare', icon: 'trend', label: 'Compare' },
+]
 
 type TypeFilter = 'ALL' | 'CALL' | 'PUT' | 'Call Spread' | 'Put Spread' | 'Butterfly' | '4-leg structure'
 interface ChainLeg { bid?: number; ask?: number }
@@ -57,6 +69,7 @@ export default function StrategyLabPage() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('ALL')
   const [visibleCount, setVisibleCount] = useState(CHAIN_PAGE_SIZE)
   const [showUnlock, setShowUnlock] = useState(false)
+  const [activeTab, setActiveTab] = useState<StrategyLabTab>('paper-trading')
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -149,15 +162,18 @@ export default function StrategyLabPage() {
       <div className="strategy-lab__art" aria-hidden="true"><i /><i /><i /></div>
       <section className="strategy-lab__safety"><NutIcon name="shield" /><div><h2>No real funds at risk</h2><p>All trades are simulated with virtual USDC using live Thetanuts market data. Nothing you do here affects your wallet.</p><button type="button">Learn more →</button></div></section>
     </header>
-    <nav className="strategy-lab__tabs" aria-label="Strategy Lab sections">{[['radar', 'Overview'], ['board', 'Paper Trading'], ['contract', 'Saved Strategies'], ['trend', 'Compare']].map(([icon, label]) => <button type="button" key={label} className={label === 'Paper Trading' ? 'active' : ''}><NutIcon name={icon as 'radar' | 'board' | 'contract' | 'trend'} />{label}</button>)}</nav>
-    <div className="strategy-lab__workspace">
+    <nav className="strategy-lab__tabs" aria-label="Strategy Lab sections">{STRATEGY_LAB_TABS.map(({ value, icon, label }) => <button type="button" key={value} className={activeTab === value ? 'active' : ''} onClick={() => setActiveTab(value)}><NutIcon name={icon} />{label}</button>)}</nav>
+    {activeTab === 'paper-trading' && <div className="strategy-lab__workspace">
       <div className="strategy-lab__main">
         <section className="paper-summary" aria-label="Simulated account summary">{paperSummary.slice(0, 3).map((item, index) => <article key={item.label}><span className="summary-icon"><NutIcon name={index === 0 ? 'wallet' : index === 1 ? 'trend' : 'contract'} /></span><div><small>{item.label}</small><strong className={'tone' in item && item.tone === 'positive' ? 'pnl-positive' : ''}>{item.value}</strong><em className={'tone' in item && item.tone === 'positive' ? 'pnl-positive' : ''}>{index === 2 ? 'positions' : item.detail}</em></div></article>)}</section>
         <OptionsChain rows={pagedRows} spreadRows={pagedSpreadTableOrders} totalRows={totalRows} assets={assets} expiries={expiries} assetFilter={assetFilter} expiryFilter={expiryFilter} typeFilter={typeFilter} search={search} selectedKey={selectedKey} loading={loading} error={error} premium={tier === 'premium'} onAsset={setAssetFilter} onExpiry={setExpiryFilter} onType={(next) => { if (isPremiumChainType(next) && tier !== 'premium') setShowUnlock(true); else setTypeFilter(next) }} onSearch={setSearch} onSelect={selectContract} onLoadMore={() => setVisibleCount((count) => count + CHAIN_PAGE_SIZE)} />
         <OpenPaperPositions />
       </div>
       <aside className="strategy-lab__side"><PaperOrderTicket contract={selected} quantity={quantity} onQuantityChange={setQuantity} /><RecentPaperTrades /></aside>
-    </div>
+    </div>}
+    {activeTab === 'saved-strategies' && <SavedStrategiesSection orders={data ? orders : null} />}
+    {activeTab === 'overview' && <section className="strategy-card"><div className="empty-state">Overview coming soon.</div></section>}
+    {activeTab === 'compare' && <section className="strategy-card"><div className="empty-state">Compare coming soon.</div></section>}
     {showUnlock && <PremiumUnlockModal onClose={() => setShowUnlock(false)} />}
   </main>
 }
