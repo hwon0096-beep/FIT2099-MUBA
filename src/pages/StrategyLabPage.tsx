@@ -4,6 +4,7 @@ import { NutIcon } from '../components/VisualSystem'
 import PremiumUnlockModal from '../components/PremiumUnlockModal'
 import SavedStrategiesSection from '../components/SavedStrategiesSection'
 import SimpleStrategyOverview, { OverviewHero } from '../components/SimpleStrategyOverview'
+import StrategyDetailModal, { type StrategyDetailKind } from '../components/StrategyDetailModal'
 import CompareStrategies from '../components/CompareStrategies'
 import PaperTradePreviewModal from '../components/PaperTradePreviewModal'
 import { useAccount } from '../context/AccountContext'
@@ -211,6 +212,8 @@ export default function StrategyLabPage() {
 
   const [activeTab, setActiveTab] =
     useState<StrategyLabTab>('paper-trading')
+
+  const [selectedStrategy, setSelectedStrategy] = useState<StrategyDetailKind | null>(null)
 
   const [openPositions, setOpenPositions] =
     useState<OpenPaperPosition[]>([])
@@ -1137,7 +1140,11 @@ export default function StrategyLabPage() {
 
 
       {activeTab === 'overview' && (
-        <SimpleStrategyOverview onExplore={(type) => { setTypeFilter(type); setActiveTab('paper-trading') }} />
+        <SimpleStrategyOverview onExplore={setSelectedStrategy} />
+      )}
+
+      {selectedStrategy && (
+        <StrategyDetailModal strategy={selectedStrategy} orders={orders} loading={loading} onClose={() => setSelectedStrategy(null)} />
       )}
 
 
