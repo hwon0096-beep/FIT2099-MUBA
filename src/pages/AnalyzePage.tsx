@@ -20,23 +20,21 @@ export default function AnalyzePage() {
   const navigate = useNavigate(), [params] = useSearchParams(), [data, setData] = useState<ExplorerData | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState<string | null>(null), [selected, setSelected] = useState<string | null>(null), applied = useRef(false), lastRequestedId = useRef<string | null>(null)
   useEffect(() => { let live = true; loadExplorerData().then(result => { if (live) setData(result) }).catch(reason => { if (live) setError(reason instanceof Error ? reason.message : 'Unable to load live analysis data.') }).finally(() => { if (live) setLoading(false) }); return () => { live = false } }, [])
   const orders = data?.orders ?? []
-  // Same-route navigations reuse this component instance rather than remounting it, so a later
-  // ?order= change must still be honored after the initial sessionStorage restore has run once.
+  // Same-route navigations reuse this component instance rather than remounting it, so later
+  // ?order= changes must update the in-memory selection without restoring cached orders.
   useEffect(() => {
     if (!orders.length) return
     const requestedId = params.get('order')
     if (!applied.current) {
       applied.current = true
       lastRequestedId.current = requestedId
-      const recentId = sessionStorage.getItem('nutscope:last-analyzed-order')
-      const id = requestedId ?? recentId
-      if (id && orders.some(order => order.id === id)) { setSelected(id); sessionStorage.setItem('nutscope:last-analyzed-order', id) }
-      else if (!requestedId) sessionStorage.removeItem('nutscope:last-analyzed-order')
+      if (requestedId && orders.some(order => order.id === requestedId)) { setSelected(requestedId); sessionStorage.setItem('nutscope:last-analyzed-order', requestedId) }
       return
     }
-    if (requestedId && requestedId !== lastRequestedId.current) {
+    if (requestedId !== lastRequestedId.current) {
       lastRequestedId.current = requestedId
-      if (orders.some(order => order.id === requestedId)) { setSelected(requestedId); sessionStorage.setItem('nutscope:last-analyzed-order', requestedId) }
+      if (requestedId && orders.some(order => order.id === requestedId)) { setSelected(requestedId); sessionStorage.setItem('nutscope:last-analyzed-order', requestedId) }
+      else setSelected(null)
     }
   }, [orders, params])
   const order = orders.find(item => item.id === selected) ?? null
