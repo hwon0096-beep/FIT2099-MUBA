@@ -1,519 +1,479 @@
-I want you to update the project README so it clearly satisfies the hackathon documentation requirements.
-
-IMPORTANT:
-- Inspect the current README first.
-- Preserve any correct technical details already there.
-- Do NOT invent contract addresses, testnet deployments, SDK behavior, environment variables, or team contributions.
-- Do NOT change application code.
-- This task is README/documentation only.
-- If a required detail is not actually present in the repository, clearly mark it as needing confirmation instead of guessing.
-
-The README must clearly cover:
-
-1. Project description
-2. Problem statement
-3. Blockchain technology used
-4. Smart contract addresses / network information
-5. Setup and installation instructions
-6. Team members
-
-==================================================
-1. PROJECT TITLE
-==================================================
-
-Use:
-
 # NUTSCOPE — Thetanuts Options Explorer
-
-Add a short opening description:
 
 NUTSCOPE is a crypto options discovery, analysis, paper-trading, and execution platform built on top of Thetanuts Finance V4 OptionBook on Base.
 
-Explain that users can:
+The platform is designed to make on-chain options easier to explore and understand. Users can discover live options opportunities, browse the Thetanuts OptionBook, analyze payoff and risk, experiment with strategies using virtual funds, and proceed to real non-custodial trading through their own wallet.
 
-- discover live options opportunities
-- browse live Thetanuts OptionBook orders
-- analyze payoff and risk
-- use Strategy Lab with virtual funds
-- compare/save strategies
-- execute real non-custodial trades through their own wallet
-
-==================================================
-2. PROJECT DESCRIPTION
-==================================================
-
-Add a clear section:
+---
 
 ## Project Description
 
-Explain the workflow:
+Crypto options can be difficult for newer users to understand because they involve concepts such as calls, puts, strike prices, premiums, expiry dates, break-even prices, payoff profiles, and multi-leg strategies.
 
-Discover → Markets → Analyze → Strategy Lab → Trade
+NUTSCOPE provides a more approachable interface on top of the live Thetanuts OptionBook.
 
-Describe:
+The main workflow is:
 
-Discover:
-- live market overview
-- live crypto prices
-- live OptionBook order summary
-- strategy opportunities
+**Discover → Explore Markets → Analyze → Practice → Trade**
 
-Markets:
-- detailed live orders
-- filters for outlook, asset, type, expiry, premium, size
-- suggested live opportunities
+### Discover
 
-Analyze:
-- payoff/risk analysis
-- break-even
-- max profit
-- max loss
-- scenario P&L
-- moneyness
-- DTE where supported
+The Discover dashboard provides an overview of the live options market, including:
 
-Strategy Lab:
-- paper trading
-- virtual USDC
-- saved strategies
-- compare
-- Free/Premium access
-- advanced strategy exploration where supported
+- Live crypto spot prices
+- Current OptionBook orders
+- Protocol volume
+- Open interest
+- Nearest expiry
+- Strategy opportunities generated from available live orders
 
-Trade:
-- real non-custodial wallet flow
-- Base
-- MetaMask/injected wallet
-- approvals and signing handled by wallet
+Instead of requiring users to manually search through hundreds of contracts, NUTSCOPE surfaces relevant opportunities such as bullish Long Calls and bearish Long Puts.
 
-==================================================
-3. PROBLEM STATEMENT
-==================================================
+### Markets
 
-Add:
+The Markets page provides more detailed access to live Thetanuts OptionBook orders.
+
+Users can filter opportunities by:
+
+- Market outlook
+- Asset
+- Call / Put / Spread
+- Expiry
+- Premium
+- Available size
+
+Suggested Live Opportunities help narrow the live order book based on the user's selected filters.
+
+### Analyze
+
+Users can select an option and inspect its payoff and risk before trading.
+
+Analysis includes supported metrics such as:
+
+- Break-even price
+- Maximum loss
+- Maximum profit
+- Scenario P&L
+- Option payoff
+- Moneyness
+- Days to expiry
+
+The analysis layer currently supports vanilla Calls/Puts and verified two-leg vertical debit spreads where sufficient order information is available.
+
+### Strategy Lab
+
+Strategy Lab provides a risk-free environment for learning and experimenting with options.
+
+Users receive virtual USDC and can paper trade against market information without spending real funds.
+
+It includes:
+
+- Paper Trading
+- Saved Strategies
+- Strategy comparison
+- Educational strategy information
+- Free and Premium strategy access
+
+Free users can access basic Call and Put functionality, while the prototype Premium tier exposes additional advanced strategy functionality.
+
+### Trade
+
+When users are ready to move from simulation to real trading, NUTSCOPE provides a non-custodial trade flow.
+
+The user's wallet remains responsible for approvals and transaction signatures. NUTSCOPE never receives or stores the user's private key.
+
+---
 
 ## Problem Statement
 
-Explain that on-chain options are powerful but difficult for less experienced users because they involve:
+On-chain options protocols provide powerful financial infrastructure, but interacting with an options order book can be difficult for users who do not already understand derivatives.
 
-- Calls/Puts
-- strike
-- expiry
-- premium
-- break-even
-- payoff
-- multi-leg structures
-- large numbers of live orders
+A user may be presented with hundreds of contracts containing different strikes, expiries, premiums, collateral assets, and structures without an obvious way to determine:
 
-Explain that a user may not know:
+- Which contracts are relevant to their market view
+- How much they could lose
+- When the position becomes profitable
+- How the payoff changes when the underlying asset moves
+- Whether they should experiment with a strategy before committing real funds
 
-- which contract fits their outlook
-- how much they can lose
-- when they profit
-- what happens under different price scenarios
-- whether they should practice first
+NUTSCOPE addresses this by adding a user-focused discovery and analysis layer on top of Thetanuts.
 
-Then explain NUTSCOPE's solution:
+Instead of treating the OptionBook as only an execution venue, NUTSCOPE creates a workflow where users can:
 
-find → understand → simulate → execute
+**find → understand → simulate → execute**
 
-Make clear that Thetanuts is load-bearing to the product because live OptionBook data powers discovery, analysis and execution.
+Thetanuts remains load-bearing to the product because the live OptionBook provides the actual options market that NUTSCOPE discovers, analyzes, and trades against.
 
-==================================================
-4. BLOCKCHAIN TECHNOLOGY USED
-==================================================
-
-Add:
+---
 
 ## Blockchain Technology Used
 
-Include only verified details from the repo:
+NUTSCOPE integrates with **Thetanuts Finance V4 OptionBook** and operates on **Base**.
+
+### Network
 
 - Blockchain: Base
-- Chain ID: 8453
+- Chain ID: `8453`
 - Environment: Base Mainnet
-- Protocol: Thetanuts Finance V4 OptionBook
-- Wallet: injected wallet such as MetaMask
-- SDK: @thetanuts-finance/thetanuts-client
+- Options protocol: Thetanuts Finance V4 OptionBook
+- Wallet: Browser-injected Ethereum wallet such as MetaMask
+- SDK: `@thetanuts-finance/thetanuts-client`
 
-If the repo contains the actual ThetanutsClient setup, include a small verified example such as:
+The server creates a read-only Thetanuts SDK client using:
 
+```ts
 new ThetanutsClient({
   chainId: 8453,
   provider
 })
+```
 
-Also mention the verified SDK calls currently used, if present:
+Live data is retrieved using Thetanuts SDK functionality including:
 
+```ts
 client.api.fetchOrders()
 client.api.getMarketData()
 client.api.getBookProtocolStats()
+```
 
-Do not invent method names.
+The frontend never needs access to a user's private key.
 
-==================================================
-5. SMART CONTRACT ADDRESSES / TESTNET
-==================================================
+For real trades, signing and approvals occur through the user's connected wallet.
 
-Add:
+---
 
 ## Smart Contract Addresses
 
-IMPORTANT:
-The current app uses Base Mainnet.
+### Network used by this project
 
-Do NOT invent testnet addresses.
+NUTSCOPE currently integrates with **Thetanuts on Base Mainnet (Chain ID 8453)**.
 
-If the project does not deploy its own contract, say that explicitly.
+The current implementation does **not use a testnet deployment**, so there are no project testnet contract addresses to report.
 
-Use wording similar to:
+Thetanuts contract/order information used by the application is obtained through the Thetanuts SDK and live OptionBook data rather than hard-coding a separate testnet deployment into the frontend.
 
-"NUTSCOPE currently integrates with existing Thetanuts infrastructure on Base Mainnet (Chain ID 8453). The project does not deploy a custom NUTSCOPE smart contract."
+> **Hackathon note:** The project interacts with existing Thetanuts infrastructure and does not deploy a custom NUTSCOPE smart contract.
 
-Then inspect the repo for any verified contract addresses.
+If the submission form specifically requires Thetanuts contract addresses, they should be copied from the official Thetanuts deployment information/SDK configuration rather than guessed or replaced with unrelated testnet addresses.
 
-If actual Thetanuts contract addresses are clearly present in:
-- SDK config
-- server config
-- constants
-- deployment files
+---
 
-include only those verified addresses.
+## Thetanuts Integration
 
-If no explicit addresses are safely discoverable, write:
+The browser-side wrapper is located at:
 
-"Contract addresses are resolved through the existing Thetanuts SDK/protocol integration. No separate NUTSCOPE testnet deployment is used."
-
-Do NOT guess.
-
-If the hackathon specifically requires testnet addresses but none exist, add a short note:
-
-"Testnet contract addresses: Not applicable — this prototype currently integrates with Base Mainnet."
-
-==================================================
-6. THETANUTS INTEGRATION
-==================================================
-
-Preserve and clean up the current technical section.
-
-Mention:
-
-Frontend wrapper:
+```text
 src/lib/thetanuts.ts
+```
 
-Server integration:
-server/thetanuts.ts
+It communicates with:
 
-Browser endpoint:
+```text
 GET /api/thetanuts
+```
 
-Mention verified SDK calls and timeout/error behavior if they are still accurate.
+The server-side read-only SDK integration is located at:
 
-Do not claim mock fallback if the app does not use one.
+```text
+server/thetanuts.ts
+```
 
-==================================================
-7. TRADE EXECUTION
-==================================================
+The server communicates with Thetanuts services and returns normalized market/order data to the frontend.
 
-Preserve the current real-trade documentation.
+Each server-side source has a timeout and is logged separately. If a live source cannot be reached, the application reports the error rather than silently replacing that source with fake market data.
 
-Explain:
+---
 
-Wallet connection:
+## Trade Execution
+
+NUTSCOPE includes a live, non-custodial trade execution flow.
+
+### Wallet Connection
+
+Implemented in:
+
+```text
 src/lib/WalletContext.tsx
+```
 
-Pre-flight validation:
+The wallet flow:
+
+1. Detects an injected wallet such as MetaMask.
+2. Requests wallet connection.
+3. Checks the connected network.
+4. Switches/checks Base when required.
+5. Creates a signer-backed Thetanuts client only after the wallet is correctly connected.
+
+NUTSCOPE never receives, stores, or transmits the user's private key.
+
+### Pre-flight Validation
+
+Implemented in:
+
+```text
 src/lib/tradePreflight.ts
+```
 
-Trade flow:
+Before execution, the application checks supported conditions including:
+
+- Wallet connected
+- Correct network
+- Order still exists
+- Order has not expired
+- Valid requested amount
+- Sufficient order availability
+- Successful `previewFillOrder`
+
+### Fill Flow
+
+Implemented in:
+
+```text
 src/FillFlow.tsx
+```
 
-Cover verified behavior such as:
+The selected order is revalidated before approval/fill because market conditions can change while a user is confirming a wallet transaction.
 
-- wallet connection
-- Base network check/switch
-- order validation
-- expiry validation
-- amount validation
-- availability validation
-- previewFillOrder
-- allowance
-- fillOrder
-- revalidation before execution
+---
 
-Do not add new claims.
+## Payoff and Risk Analysis
 
-==================================================
-8. PAYOFF / ANALYSIS
-==================================================
+Core payoff calculations are implemented as pure functions in:
 
-Preserve the current payoff section but organize it clearly.
-
-Mention verified files:
-
+```text
 src/lib/payoff.ts
 src/lib/spreadPayoff.ts
 src/lib/orderPayoff.ts
+```
 
-Explain:
+The supported analysis includes vanilla Calls/Puts and verified two-leg vertical debit spreads.
 
-- vanilla Call/Put payoff
-- two-leg vertical debit spread support where verified
-- break-even
-- max loss
-- max profit
-- scenario P&L
-- premium denomination handling
+The calculations are reused throughout the application where appropriate rather than implementing separate formulas for each screen.
 
-Preserve the non-USDC denomination warning if it is still valid.
+### Premium denomination
 
-==================================================
-9. SETUP AND INSTALLATION
-==================================================
+An option premium is denominated in its collateral token and should not automatically be interpreted as USD.
 
-Add/keep:
+`isPremiumUsdSafe()` in:
+
+```text
+src/lib/orderPayoff.ts
+```
+
+prevents non-USDC collateral premiums from being silently treated as USD.
+
+---
 
 ## Setup and Installation
 
-Requirements:
-- Node.js 18+
+### Requirements
+
+Install:
+
+- Node.js 18 or newer
 - npm
-- modern browser
-- MetaMask/injected wallet only for real trading
+- A modern browser
+- MetaMask or another supported injected wallet for real trading
 
-Commands:
+Clone the repository and install dependencies:
 
+```bash
 npm install
+```
 
+Start the application:
+
+```bash
 npm run dev
+```
 
-Document:
+This starts both services:
 
-Frontend:
-http://127.0.0.1:5173
+```text
+Frontend: http://127.0.0.1:5173
+API:      http://127.0.0.1:8787
+```
 
-Backend:
-http://127.0.0.1:8787
+Open the frontend URL in your browser.
 
-Also include:
+During development, Vite proxies `/api/thetanuts` requests to the Express server.
 
+### Production Build
+
+```bash
 npm run build
+```
 
+### Tests
+
+```bash
 npm test
+```
 
-If current dev behavior may select a different Vite port when 5173 is occupied, do not overstate that 5173 is guaranteed.
-
-==================================================
-10. ENVIRONMENT VARIABLES
-==================================================
-
-Add/keep:
+---
 
 ## Environment Variables
 
+Create a `.env` file in the project root when optional server configuration is required.
+
 Example:
 
+```env
 BASE_RPC_URL=
 PREMIUM_PASSWORD=
 GEMINI_API_KEY=
+```
 
-Never include real credentials.
+Never commit real API keys or passwords.
 
-Explain:
+Do not expose server secrets using `VITE_` variables.
 
-BASE_RPC_URL
-- optional
-- server-side only
-- Base RPC
+### Base RPC
 
-PREMIUM_PASSWORD
-- server-side prototype premium access
+`BASE_RPC_URL` can optionally provide a more reliable Base RPC endpoint.
 
-GEMINI_API_KEY
-- only needed if the AI Analyst feature uses Gemini
-- other app features should remain available if AI is unavailable, if that is still true
+Without one, the application can use its configured public Base RPC fallback, subject to public RPC rate limits and availability.
 
-Do NOT use VITE_ for secrets.
+The value is read server-side through:
 
-==================================================
-11. PREMIUM DEMO ACCESS
-==================================================
+```ts
+process.env.BASE_RPC_URL
+```
 
-Keep the hackathon demo section only if the current implementation actually supports the demo code.
+### Premium Demo Access
 
-If verified, document:
+For hackathon demonstration purposes, the prototype includes Premium access.
 
+Demo password:
+
+```text
 NUTSCOPE2026
+```
 
-But clearly label it:
+A server-side `PREMIUM_PASSWORD` can override the demo value.
 
-Prototype/demo access only
+This is a prototype access mechanism only. Production authentication, payments, and subscriptions are outside the hackathon scope.
 
-Do not describe it as production authentication.
+### AI
 
-If PREMIUM_PASSWORD overrides the demo code, preserve that only if it is actually implemented.
+If the AI Analyst integration is enabled, its server-side provider requires:
 
-==================================================
-12. PROJECT STRUCTURE
-==================================================
+```env
+GEMINI_API_KEY=
+```
 
-Add a compact project structure section with the main relevant files/pages:
+If the key is unavailable, the rest of NUTSCOPE continues to operate.
 
-Discover
-Markets
-Analyze
-Strategy Lab
-Trade
-Portfolio
+---
 
-Only list actual file paths.
+## Project Structure
 
-Do not make this section too long.
+Important application files include:
 
-==================================================
-13. DEPLOYMENT
-==================================================
+```text
+src/
+├── pages/
+│   ├── AnalyzePage.tsx
+│   ├── PortfolioPage.tsx
+│   └── StrategyLabPage.tsx
+│
+├── lib/
+│   ├── WalletContext.tsx
+│   ├── thetanuts.ts
+│   ├── payoff.ts
+│   ├── spreadPayoff.ts
+│   ├── orderPayoff.ts
+│   └── tradePreflight.ts
+│
+├── FillFlow.tsx
+└── OptionsExplorer.tsx
 
-Preserve the current deployment section if still valid.
+server/
+├── thetanuts.ts
+└── ...
+```
 
-Mention:
+Main user-facing areas:
 
-render.yaml
-start.ts
+- **Discover** — market overview and live strategy opportunities
+- **Markets** — searchable/filterable live OptionBook
+- **Analyze** — payoff and risk analysis
+- **Strategy Lab** — education and paper trading
+- **Trade** — wallet-based live execution
+- **Portfolio** — position/activity information
 
-Explain:
+---
+
+## Deployment
+
+`render.yaml` and `start.ts` configure the production deployment.
+
+The production process:
+
+```text
 npm run build
-dist/
-Express serves API + frontend
+        ↓
+Frontend compiled to dist/
+        ↓
+Express serves frontend + API
+```
 
-Do not invent hosting configuration.
+Production secrets such as RPC endpoints and API keys must be configured through the deployment environment and must not be committed to Git.
 
-==================================================
-14. TEAM MEMBERS
-==================================================
-
-Add:
+---
 
 ## Team Members
 
-Create a table.
+> Replace the placeholders below with the final names and responsibilities of each team member.
 
-Use the actual team names/contributions only if they are clearly available from the repo or current README.
+| Team Member |
+| Angeline Regina Lee 
+| Hui Qing Wong |
+| See Eng Chin | 
 
-If not known, use placeholders such as:
-
-| Team Member | 
-| Angeline Regina Lee | 
-| Hui Qing Wong | 
-| See Eng Chin|
-
-Do NOT invent teammates' names.
-
-==================================================
-15. SAFETY
-==================================================
-
-Add:
+---
 
 ## Safety
 
-Clearly separate:
+The project includes both simulation and real blockchain functionality.
 
-Strategy Lab:
-- virtual funds
-- no real USDC
-- no blockchain transaction
+### Strategy Lab
 
-Live Trading:
-- real Base Mainnet
-- real wallet approvals/signatures
-- user reviews transaction in wallet
-- NUTSCOPE does not store private keys
+Strategy Lab uses virtual funds.
 
-==================================================
-16. REMAINING WORK
-==================================================
+No real USDC is spent through paper trading.
 
-Keep a short honest section:
+### Live Trading
+
+Live OptionBook execution can involve real funds on Base Mainnet.
+
+Users should:
+
+- Verify the selected order before signing.
+- Verify the Base network.
+- Review token approvals.
+- Use small amounts when testing.
+- Never share a private key or seed phrase.
+
+NUTSCOPE does not custody user funds or private keys.
+
+---
 
 ## Remaining Work
 
-Include only realistic future work such as:
+Current areas for future development include:
 
-- production-grade auth/subscriptions
-- stronger RPC/indexer monitoring
-- broader multi-leg analysis
-- improved non-USDC payoff display
-- richer portfolio settlement/P&L
-- expanded strategy comparison/recommendation
+- Production-grade authentication and Premium subscriptions
+- More reliable production RPC/indexer monitoring
+- Additional advanced multi-leg strategy analysis
+- Improved non-USDC payoff representation
+- Broader portfolio settlement and realized P&L information
+- Expanded strategy recommendation and comparison tools
 
-Do not make this section too long.
+---
 
-==================================================
-17. DISCLAIMER
-==================================================
-
-Add a short disclaimer:
+## Disclaimer
 
 NUTSCOPE is a hackathon prototype for educational and demonstration purposes.
-Options trading involves risk.
-Paper trading does not guarantee future performance.
-Users remain responsible for reviewing and approving real wallet transactions.
 
-==================================================
-18. IMPORTANT WRITING STYLE
-==================================================
-
-Make the README:
-
-- professional
-- concise but complete
-- hackathon-ready
-- easy for judges to scan
-- technically honest
-- clear about what is real vs simulated
-
-Use headings and bullets.
-
-Do not make it read like a giant internal engineering document.
-
-Put the most judge-relevant information near the top:
-Project Description
-Problem Statement
-Blockchain Technology
-Smart Contract / Network Info
-Setup
-Team Members
-
-Move deeper technical implementation details lower down.
-
-==================================================
-19. VERIFICATION BEFORE FINALIZING
-==================================================
-
-Before editing, inspect the repo and verify:
-
-- chain ID
-- whether Base Mainnet or testnet is used
-- actual environment variables
-- whether PREMIUM demo code is still supported
-- SDK methods used
-- route names
-- file paths
-- whether custom smart contracts exist
-- whether testnet addresses exist
-
-If something is uncertain, say so in the README rather than guessing.
-
-Then modify ONLY README.md.
-
-Afterward report:
-
-1. Sections added
-2. Sections reorganized
-3. Any technical claims you corrected
-4. Whether any contract addresses were found
-5. Whether testnet is applicable
-6. Any placeholders still requiring team input
-
-Do not modify application source code.
+Options trading involves financial risk. Paper-trading results do not guarantee future performance. Users remain responsible for reviewing and approving any real blockchain transaction through their own wallet.
