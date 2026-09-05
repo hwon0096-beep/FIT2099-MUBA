@@ -14,3 +14,12 @@ services:
       # enter the real value in the Render dashboard for this service.
       - key: BASE_RPC_URL
         sync: false
+      # Password that unlocks Premium tier via POST /api/login (server/login.ts).
+      # Not set here — enter the real value in the Render dashboard for this service.
+      - key: PREMIUM_PASSWORD
+        sync: false
+      # Google Gemini API key used by the AI Analyst via POST /api/chat
+      # (server/aiAnalyst.ts). Not set here — enter the real value in the
+      # Render dashboard for this service.
+      - key: GEMINI_API_KEY
+        sync: false
