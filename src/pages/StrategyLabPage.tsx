@@ -3,6 +3,7 @@ import { NutIcon } from '../components/VisualSystem'
 import PremiumUnlockModal from '../components/PremiumUnlockModal'
 import SavedStrategiesSection from '../components/SavedStrategiesSection'
 import SimpleStrategyOverview, { OverviewHero } from '../components/SimpleStrategyOverview'
+import CompareStrategies from '../components/CompareStrategies'
 import { useAccount } from '../context/AccountContext'
 import { formatCompactExpiry, parseOrderNumber, parseStrikeList } from '../lib/formatters'
 import { loadExplorerData, type ExplorerData, type ExplorerOrder } from '../lib/thetanuts'
@@ -177,7 +178,7 @@ export default function StrategyLabPage() {
     </div>}
     {activeTab === 'saved-strategies' && <SavedStrategiesSection orders={data ? orders : null} />}
     {activeTab === 'overview' && <SimpleStrategyOverview />}
-    {activeTab === 'compare' && <section className="strategy-card"><div className="empty-state">Compare coming soon.</div></section>}
+    {activeTab === 'compare' && <CompareStrategies />}
     {showUnlock && <PremiumUnlockModal onClose={() => setShowUnlock(false)} />}
   </main>
 }
