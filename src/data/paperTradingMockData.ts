@@ -4,7 +4,12 @@ export interface PaperContract {
   asset: string
   type: 'Call' | 'Put'
   strike: number
+  /** Compact display string (formatCompactExpiry), e.g. "Sep 11" — for on-screen labels only. */
   expiry: string
+  /** Raw unix-seconds expiry, e.g. from ChainRow.expiry — needed for real days-to-expiry math
+   *  (daysToExpiry) once a position is actually opened, since that can't be derived from the
+   *  compact display string above. */
+  expiryRaw: string
   last: number
   ask: number
 }
@@ -25,7 +30,7 @@ export const optionChainRows = [
   { strike: 83000, call: [210, 250, 230], put: [1480, 1580, 1520] },
 ] as const
 
-export const defaultPaperContract: PaperContract = { asset: 'BTC', type: 'Call', strike: 81000, expiry: 'Sep 11', last: 615, ask: 640 }
+export const defaultPaperContract: PaperContract = { asset: 'BTC', type: 'Call', strike: 81000, expiry: 'Sep 11', expiryRaw: '1757548800', last: 615, ask: 640 }
 
 export const paperPositions = [
   { asset: 'ETH', strategy: 'ETH Long Call', detail: 'Jun 13, 2025 · $3,200 Call', entry: 'Jun 3, 2025', days: '10', cost: '112.00', value: '124.45', pnl: '+12.45', change: '+11.12%', positive: true },

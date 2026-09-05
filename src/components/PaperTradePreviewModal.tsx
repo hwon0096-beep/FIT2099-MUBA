@@ -22,9 +22,10 @@ export default function PaperTradePreviewModal({ contract, quantity, onQuantityC
   const maxLoss = estimatedCost
   const breakeven = breakevenPrice(optionType, contract.strike, contract.ask)
   // ChainRow has no single backing order id (it's a best-bid/ask aggregate across the live book,
-  // not one order) — this reference is real (the same strike-expiry key StrategyLabPage already
-  // uses to track selection), just deliberately not labeled "Order ID" since it isn't one.
-  const reference = `${contract.strike}-${contract.expiry}`
+  // not one order) — this reference is real, and matches exactly the same strike-expiryRaw key
+  // StrategyLabPage's own selectedKey uses to track/highlight the selected row, just deliberately
+  // not labeled "Order ID" since it isn't one.
+  const reference = `${contract.strike}-${contract.expiryRaw}`
 
   return <div className="modal-backdrop">
     <section className="modal-panel paper-preview-modal">
