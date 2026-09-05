@@ -30,6 +30,16 @@ Run the test suite with:
 npm test
 ```
 
+## Hackathon Demo Access
+
+Run `npm install`, then `npm run dev`. No `.env` file is needed to preview Premium.
+
+- Premium demo access code: **NUTSCOPE2026** (enter it in the Premium password field).
+- No `PREMIUM_PASSWORD` environment variable is required. Setting it server-side overrides the demo value; an empty value uses the demo code.
+- This is prototype/demo access. Production authentication and subscriptions are outside the scope of this prototype.
+- `GEMINI_API_KEY` is needed only for AI Analyst responses. Without it, AI returns an unavailable message while other features remain accessible.
+- `BASE_RPC_URL` is optional; live data uses the existing public Base RPC fallback and still depends on upstream availability. Keep actual credentials server-side, never in `VITE_` variables.
+
 ### Optional Base RPC
 
 The explorer defaults to Base's public RPC (`https://mainnet.base.org`), which throttles aggressively under real load. For a more reliable demo, set `BASE_RPC_URL` in a `.env` file to your own Base mainnet RPC endpoint (e.g. from Alchemy or Infura).
