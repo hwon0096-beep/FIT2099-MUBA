@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Area, CartesianGrid, Line, LineChart, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Area, CartesianGrid, ComposedChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import StrategyRecommendations from '../components/StrategyRecommendations'
 import AIAnalyst from '../components/AIAnalyst'
 import { buildAnalysisContext } from '../lib/analysisContext'
@@ -43,21 +43,157 @@ export default function AnalyzePage() {
   }, [orders, params])
   const order = orders.find(item => item.id === selected) ?? null
   const analystContext = useMemo(() => order ? buildAnalysisContext(order, data?.marketData) : null, [data?.marketData, order])
-  return <main className="analyze-page"><div className="analyze-shell"><header className="analyze-heading"><div><h1>Analyze <em>Trade</em></h1><p>Understand the risk and expiry outcome of {order ? 'this' : 'a'} live OptionBook order.</p></div><button type="button" onClick={() => navigate('/markets')}>← Back to Markets</button></header>{error && <div className="analyze-notice">{error}</div>}{orders.length > 0 && <StrategyRecommendations orders={orders} marketData={data?.marketData} />}{!order ? <AnalyzeEmpty onBrowse={() => navigate('/markets')} loading={loading} /> : <><TradeAnalysis order={order} marketData={data?.marketData} />{analystContext && <AIAnalyst key={order.id} context={analystContext} />}</>}</div></main>
+  return <main className="analyze-page"><div className="analyze-shell">
+    {error && <div className="analyze-notice" role="alert">{error}</div>}
+    {data?.errors.map(message => <div className="analyze-notice" role="status" key={message}>{message}</div>)}
+    {!order ? <><header className="analyze-heading"><div><h1>Analyze <em>Trade</em></h1><p>Understand the risk and expiry outcome of a live OptionBook order.</p></div><button type="button" onClick={() => navigate('/markets')}>← Back to Markets</button></header><AnalyzeEmpty onBrowse={() => navigate('/markets')} loading={loading} /></>
+      : <TradeAnalysis order={order} marketData={data?.marketData} analystContext={analystContext} />}
+    {orders.length > 0 && <StrategyRecommendations orders={orders} marketData={data?.marketData} />}
+  </div></main>
 }
 
 function AnalyzeEmpty({ onBrowse, loading }: { onBrowse: () => void; loading: boolean }) { const features = [['↗', 'Payoff at Expiry', 'Visualize profit and loss across possible expiry prices.'], ['◈', 'Risk Summary', 'See max loss, break-even, premium and potential upside.'], ['▤', 'Scenario Analysis', 'Compare outcomes across different underlying prices.'], ['✦', 'Plain-English Explanation', 'Understand what the option means without advanced options knowledge.'], ['◷', 'Time to Expiry', 'See how long remains until the live order expires.']]; return <section className="analyze-empty-state"><p className="analyze-kicker">ANALYZE LIVE OPTIONS</p><h2>Analyze Trade</h2><p>Understand the risk and payoff of a live Thetanuts OptionBook order before you trade.</p><button type="button" onClick={onBrowse}>Browse Live Markets <span>→</span></button>{loading && <small>Checking the live OptionBook…</small>}<div><h3>What you'll get</h3><section>{features.map(([icon, title, description]) => <article key={title}><i>{icon}</i><strong>{title}</strong><span>{description}</span></article>)}</section></div></section> }
 
-function TradeAnalysis({ order, marketData }: { order: ExplorerOrder; marketData: ExplorerData['marketData'] }) {
-  const strikes = parseStrikeList(order.strikes), spot = resolveAssetPrice(order.asset, marketData?.prices), premium = parseOrderNumber(order.pricePerContract), single = strikes.length === 1 && order.optionType !== 'UNKNOWN', type = order.optionType === 'CALL' ? 'CALL' : 'PUT'
+
+type Calculation = ReturnType<typeof compute>
+
+function TradeAnalysis({ order, marketData, analystContext }: { order: ExplorerOrder; marketData: ExplorerData['marketData']; analystContext: ReturnType<typeof buildAnalysisContext> | null }) {
+  const navigate = useNavigate()
+  const spot = resolveAssetPrice(order.asset, marketData?.prices)
   const facts = useMemo(() => buildPayoffFacts(order, marketData), [order, marketData])
   const supported = facts?.kind === 'vanilla' || (facts?.kind === 'spread' && isSupportedDebitSpread(facts))
   const safe = supported && spot !== undefined
   const calc = useMemo(() => safe && facts ? compute(facts) : null, [facts, safe])
-  const [tab, setTab] = useState<'overview' | 'scenario'>('overview')
-  const navigate = useNavigate()
-  return <div className="analyze-layout"><aside><TradeCard order={order} spot={spot} strikes={strikes} type={type} single={single} /><Meaning order={order} strike={strikes[0]} type={type} premium={premium} safe={safe} spot={spot} /></aside><section className="analyze-main"><div className="analyze-action-row"><button className="analyze-continue" type="button" onClick={() => navigate(`/trade?order=${encodeURIComponent(order.id)}`)}>Continue to Trade →</button>{calc && <SaveAction order={order} calc={calc} />}</div>{calc ? <><Diagram asset={order.asset} calc={calc} /><Risks calc={calc} order={order} /><section className="analyze-card analysis-tabs"><div className="analysis-tab-list" role="tablist" aria-label="Analysis detail"><button type="button" role="tab" aria-selected={tab === 'overview'} className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>Overview</button><button type="button" role="tab" aria-selected={tab === 'scenario'} className={tab === 'scenario' ? 'active' : ''} onClick={() => setTab('scenario')}>Scenario Analysis</button></div>{tab === 'overview' ? <Overview order={order} calc={calc} /> : <ScenarioTable asset={order.asset} calc={calc} />}</section></> : <Unsupported order={order} single={single} type={type} spot={spot} />}</section></div>
+  return <div className="analyze-dashboard">
+    <div className="ad-main">
+      <header className="ad-heading"><button type="button" className="ad-back" onClick={() => navigate('/markets')}>← Back to Markets</button><h1>Analyze Live Order</h1><p>Understand the risk and payoff before you trade.</p></header>
+      <OrderSummary order={order} spot={spot} />
+      <section className="ad-panel ad-payoff" aria-labelledby="ad-payoff-title">
+        <header className="ad-panel-heading"><h2 id="ad-payoff-title">Payoff at Expiry <span className="ad-info" title="Illustrative net payoff for one unit on the buyer side at expiry.">ⓘ</span></h2><div className="ad-chart-mode" aria-label="Chart mode"><button type="button" aria-pressed="true">At expiry</button><button type="button" disabled title="Time-based pricing is unavailable">P/L over time <small>Coming soon</small></button></div></header>
+        {calc && facts ? <Diagram asset={order.asset} calc={calc} facts={facts} /> : <div className="ad-chart-unavailable"><span aria-hidden="true">⌁</span><h3>Payoff analysis unavailable</h3><p>{unavailableReason(order, spot)}</p></div>}
+        <Metrics order={order} spot={spot} calc={calc} />
+      </section>
+      <div className="ad-lower"><Meaning order={order} calc={calc} /><ScenarioTable order={order} calc={calc} facts={facts} /></div>
+      {calc && <div className="ad-save-row"><span>Keep this analysis in your saved ideas.</span><SaveAction order={order} calc={calc} /></div>}
+    </div>
+    <aside className="ad-sidebar" aria-label="Order risk and details">
+      <RiskSummary calc={calc} /><ContractDetails order={order} calc={calc} />
+      <div className="ad-ai">{analystContext && <AIAnalyst key={order.id} context={analystContext} />}</div>
+      <button className="ad-continue" type="button" onClick={() => navigate(`/trade?order=${encodeURIComponent(order.id)}`)}><strong>Continue to Trade <span aria-hidden="true">→</span></strong><small>Continue with this selected Thetanuts order.</small></button>
+    </aside>
+  </div>
 }
+
+function unavailableReason(order: ExplorerOrder, spot?: number) {
+  if (!isPremiumUsdSafe(order)) return 'Premium is denominated in ' + order.collateral + '. A compatible USD conversion is unavailable, so USD payoff and breakeven are withheld.'
+  if (spot === undefined) return 'Live spot data is unavailable for this asset. No substitute spot price is used for this analysis.'
+  return 'Detailed payoff is available for single-leg calls and puts and safely ordered vertical debit spreads. This order is not a supported structure.'
+}
+function orderType(order: ExplorerOrder) {
+  const count = parseStrikeList(order.strikes).length
+  if (order.optionType === 'UNKNOWN') return 'Unknown'
+  const type = order.optionType === 'CALL' ? 'Call' : 'Put'
+  return count === 1 ? type : count === 2 ? type + ' spread' : 'Multi-leg'
+}
+function OrderSummary({ order, spot }: { order: ExplorerOrder; spot?: number }) {
+  const navigate = useNavigate()
+  return <section className="ad-panel ad-order-summary" aria-label="Selected live order">
+    <div className="ad-asset"><i className={order.asset.toLowerCase()}><Token asset={order.asset} /></i><div><strong>{order.asset}</strong><small>{formatUsd(spot)}</small></div></div>
+    <span className={'ad-type ad-type-' + order.optionType.toLowerCase()}>{orderType(order)}</span>
+    <dl><Detail label="Strike" value={order.strikes} /><Detail label="Expiry (DTE)" value={formatCompactExpiry(order.expiry) + ' (' + daysToExpiry(order.expiry) + 'd)'} /><Detail label="Spot price" value={formatUsd(spot)} /><Detail label="Premium" value={formatNumber(order.pricePerContract, 6) + ' ' + order.collateral} /><Detail label="Available size" value={formatNumber(order.availableAmount, 4) + ' ' + order.collateral} /></dl>
+    <button type="button" className="ad-market-button" onClick={() => navigate('/markets')}>View Markets <span aria-hidden="true">↗</span></button>
+  </section>
+}
+
+function Diagram({ asset, calc, facts }: { asset: string; calc: Calculation; facts: PayoffFacts }) {
+  const gradientId = useId().replace(/:/g, '')
+  // Keep existing samples and calculate exact landmarks using the same utilities,
+  // preserving sharp strike corners and an accurate zero crossing.
+  const prices = [...new Set([...calc.curve.map(point => point.price), calc.strike, calc.breakeven, calc.spot, ...(facts.kind === 'spread' ? [facts.farStrike] : [])])].sort((a, b) => a - b)
+  const curve = prices.map(price => ({ price, pnl: facts.kind === 'spread'
+    ? spreadPayoff.netPnlAtExpiry({ ...facts, positionSize: 1 }, price)
+    : payoff.netPnlAtExpiry({ ...facts, positionSize: 1 }, price) }))
+  const low = Math.min(0, ...curve.map(point => point.pnl)), high = Math.max(0, ...curve.map(point => point.pnl))
+  const padding = Math.max((high - low) * .12, .01)
+  const min = low - padding, max = high + padding
+  // Gradients use the area's own bounding box, from zero to the extrema.
+  const zero = high === low ? 50 : high / (high - low) * 100
+  const markers = [{ name: 'Breakeven', value: calc.breakeven, color: '#00dfce' }, { name: 'Current spot', value: calc.spot, color: '#bfccda' }, { name: 'Strike', value: calc.strike, color: '#e9c63c' }, ...(facts.kind === 'spread' ? [{ name: 'Far strike', value: facts.farStrike, color: '#e9c63c' }] : [])]
+  return <>
+    <div className="ad-legend" aria-label="Chart legend"><span><i className="ad-legend-profit" />Profit</span><span><i className="ad-legend-loss" />Loss</span>{markers.map(marker => <span key={marker.name}><i style={{ borderColor: marker.color, borderTopStyle: 'dashed' }} />{marker.name}</span>)}</div>
+    <div className="ad-chart" role="img" aria-label={asset + ' buyer payoff at expiry. Breakeven ' + formatUsd(calc.breakeven) + ', current spot ' + formatUsd(calc.spot) + ', strike ' + formatUsd(calc.strike)}>
+      <ResponsiveContainer width="100%" height="100%"><ComposedChart data={curve} margin={{ top: 72, right: 22, bottom: 25, left: 0 }}>
+        <defs><linearGradient id={gradientId + '-line'} x1="0" y1="0" x2="0" y2="1"><stop offset={zero + '%'} stopColor="#00dfce" /><stop offset={zero + '%'} stopColor="#ff5266" /></linearGradient><linearGradient id={gradientId + '-area'} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#00cdbb" stopOpacity={.32} /><stop offset={zero + '%'} stopColor="#00cdbb" stopOpacity={.08} /><stop offset={zero + '%'} stopColor="#ed425c" stopOpacity={.08} /><stop offset="100%" stopColor="#ed425c" stopOpacity={.3} /></linearGradient></defs>
+        <CartesianGrid stroke="#173043" vertical={false} />
+        <XAxis dataKey="price" type="number" domain={['dataMin', 'dataMax']} tickFormatter={value => formatUsd(value, 0)} tick={{ fill: '#8da4b7', fontSize: 11 }} tickLine={false} axisLine={{ stroke: '#344b5d' }} minTickGap={35} label={{ value: asset + ' price at expiry (USD)', position: 'insideBottom', offset: -18, fill: '#8da4b7', fontSize: 10 }} />
+        <YAxis domain={[min, max]} tickFormatter={value => formatUsd(value, Math.abs(value) < 1 ? 4 : 2)} tick={{ fill: '#8da4b7', fontSize: 10 }} tickLine={false} axisLine={{ stroke: '#344b5d' }} width={70} label={{ value: 'Net P/L (USD)', position: 'top', offset: 12, fill: '#8da4b7', fontSize: 10 }} />
+        <Tooltip labelFormatter={value => 'Expiry price: ' + formatUsd(Number(value))} formatter={value => [formatUsd(Number(value), 6), 'Net P/L · one unit']} contentStyle={{ background: '#081c2b', border: '1px solid #29475c', borderRadius: 8, color: '#e4edf5', fontSize: 12 }} />
+        <ReferenceLine y={0} stroke="#9fb0c3" strokeDasharray="5 5" />
+        {markers.map((marker, index) => <ReferenceLine key={marker.name} x={marker.value} stroke={marker.color} strokeDasharray="5 5" label={({ viewBox }) => {
+          const box = viewBox as { x?: number; y?: number }
+          return <text x={box.x} y={(box.y ?? 0) - 12 - index * 15} fill={marker.color} fontSize={10} textAnchor={marker.value > (prices[0] + prices[prices.length - 1]) / 2 ? 'end' : 'start'}>{marker.name} {formatUsd(marker.value)}</text>
+        }} />)}
+        <Area type="linear" dataKey="pnl" baseValue={0} stroke={'url(#' + gradientId + '-line)'} fill={'url(#' + gradientId + '-area)'} strokeWidth={2.5} dot={false} isAnimationActive={false} />
+      </ComposedChart></ResponsiveContainer>
+    </div>
+    <p className="ad-chart-note">Illustrative buyer payoff for one unit at expiry · excludes execution fees.</p>
+  </>
+}
+
+function Metrics({ order, spot, calc }: { order: ExplorerOrder; spot?: number; calc: Calculation | null }) {
+  const strikes = parseStrikeList(order.strikes)
+  const money = calc ? payoff.moneyness(calc.type, calc.strike, calc.spot) : strikes.length === 1 && spot !== undefined && order.optionType !== 'UNKNOWN' ? payoff.moneyness(order.optionType, strikes[0], spot) : null
+  const strike = calc?.strike ?? strikes[0]
+  const distance = spot !== undefined && strike > 0 ? Math.abs((spot - strike) / strike * 100) : null
+  return <div className="ad-metrics">
+    <Metric icon="↓" label="Max Loss" value={calc ? formatNumber(calc.maxLoss, 6) + ' USDC' : 'Unavailable'} hint="The most you can lose under this buyer assumption." loss />
+    <Metric icon="↔" label="Breakeven" value={calc ? formatUsd(calc.breakeven) : 'Unavailable'} hint={calc ? order.asset + ' must be ' + (calc.type === 'CALL' ? 'above' : 'below') + ' this price at expiry to profit.' : 'Requires supported USD payoff data.'} />
+    <Metric icon="↗" label="Max Profit" value={profitValue(calc)} hint={calc?.isSpread ? 'Capped at spread width minus premium.' : calc?.type === 'CALL' ? 'Profit increases as the asset moves higher.' : calc ? 'Maximum if the asset reaches zero.' : 'Requires supported USD payoff data.'} />
+    <Metric icon="▦" label="DTE" value={daysToExpiry(order.expiry) + ' days'} hint={'Expires ' + formatCompactExpiry(order.expiry) + ' · ' + timeLeft(Number(order.expiry) * 1000 - Date.now()) + '.'} />
+    <Metric icon="◎" label="Moneyness" value={money ? money + (distance !== null ? ' ' + formatNumber(distance, 1) + '%' : '') : 'Unavailable'} hint={money && spot !== undefined ? order.asset + ' is ' + formatNumber(distance ?? 0, 1) + '% ' + (spot >= strike ? 'above' : 'below') + (calc?.isSpread ? ' the long-leg strike.' : ' the strike.') : 'Requires a supported strike and live spot.'} />
+    <Metric icon="$" label="Premium" value={formatNumber(order.pricePerContract, 6) + ' ' + order.collateral} hint="Illustrative premium for one analyzed unit." />
+  </div>
+}
+function Metric({ icon, label, value, hint, loss = false }: { icon: string; label: string; value: string; hint: string; loss?: boolean }) {
+  return <article className={'ad-metric' + (loss ? ' ad-metric-loss' : '')}><header><i aria-hidden="true">{icon}</i><span>{label}</span></header><strong>{value}</strong><p>{hint}</p></article>
+}
+function profitValue(calc: Calculation | null) { return !calc ? 'Unavailable' : calc.maxProfit === undefined ? 'Unlimited' : formatNumber(calc.maxProfit, 6) + ' USDC' }
+
+function Meaning({ order, calc }: { order: ExplorerOrder; calc: Calculation | null }) {
+  return <section className="ad-panel ad-meaning"><h2>What does this option mean?</h2><p>You are viewing an {order.asset} {orderType(order).toLowerCase()} order with {parseStrikeList(order.strikes).length === 1 ? 'a strike of' : 'strikes of'} {order.strikes}, expiring {formatExpiry(order.expiry)}.</p>
+    {calc ? <ul>
+      <li><i aria-hidden="true">◇</i><span>{calc.isSpread ? 'The long ' + calc.type.toLowerCase() + ' creates directional exposure; the short leg caps the gain.' : 'This models the buyer side of one ' + calc.type.toLowerCase() + '; the premium is paid upfront.'}</span></li>
+      <li><i aria-hidden="true">↗</i><span>You profit if {order.asset} is {calc.type === 'CALL' ? 'above' : 'below'} {formatUsd(calc.breakeven)} at expiry.</span></li>
+      <li><i className="ad-negative" aria-hidden="true">↓</i><span>Maximum loss is limited to the {formatNumber(calc.maxLoss, 6)} USDC premium {calc.isSpread ? 'debit' : 'paid'}.</span></li>
+      <li><i aria-hidden="true">✧</i><span>{calc.maxProfit === undefined ? 'Profit is unlimited as ' + order.asset + ' moves higher.' : 'Maximum profit is ' + formatNumber(calc.maxProfit, 6) + ' USDC per ' + (calc.isSpread ? 'spread.' : 'unit.')}</span></li>
+    </ul> : <p>Premium is quoted in {order.collateral}. Detailed profit and loss explanations are unavailable until supported deterministic data is available.</p>}
+    <small>Illustrative buyer analysis, not your wallet position.</small>
+  </section>
+}
+function ScenarioTable({ order, calc, facts }: { order: ExplorerOrder; calc: Calculation | null; facts: PayoffFacts | null }) {
+  return <section className="ad-panel ad-scenarios"><h2>Scenario Analysis at Expiry</h2><div className="ad-table-wrap"><table><thead><tr><th>{order.asset} price</th><th>Intrinsic value</th><th>P/L</th><th>Return on premium</th></tr></thead><tbody>
+    {calc && facts ? calc.rows.map(row => <tr key={row.change} className={row.change === 0 ? 'ad-current-row' : undefined}>
+      <td>{formatUsd(row.price)}<small>{row.change === 0 ? 'Current spot' : (row.change > 0 ? '+' : '') + row.change + '%'}</small></td>
+      <td>{formatUsd(facts.kind === 'spread' ? spreadPayoff.intrinsicValueAtExpiry(facts.spreadType, facts.nearStrike, facts.farStrike, row.price) : payoff.intrinsicValueAtExpiry(facts.optionType, facts.strike, row.price), 6)}</td>
+      <td className={row.pnl >= 0 ? 'ad-positive' : 'ad-negative'}>{row.pnl > 0 ? '+' : ''}{formatUsd(row.pnl, 6)}</td>
+      <td className={row.returnPct >= 0 ? 'ad-positive' : 'ad-negative'}>{calc.premium > 0 ? (row.returnPct > 0 ? '+' : '') + formatNumber(row.returnPct, 1) + '%' : 'Unavailable'}</td>
+    </tr>) : <tr><td colSpan={4} className="ad-table-empty">Scenario data unavailable for this order.</td></tr>}
+  </tbody></table></div><small className="ad-footnote">Per analyzed unit · expiry outcomes, not forecasts.</small></section>
+}
+function RiskSummary({ calc }: { calc: Calculation | null }) {
+  return <section className="ad-panel ad-risk-summary"><header className="ad-panel-heading"><h2><span className="ad-shield" aria-hidden="true">♢</span> Risk Summary</h2><span className="ad-status">{calc ? 'Defined loss' : 'Unavailable'}</span></header><dl>
+    <Detail label="Risk profile" value={calc ? 'Defined loss' : 'Unavailable'} /><Detail label="Loss is capped" value={calc ? 'Yes · buyer assumption' : 'Unavailable'} />
+    <Detail label="Max loss" value={calc ? formatNumber(calc.maxLoss, 6) + ' USDC' : 'Unavailable'} /><Detail label="Max profit" value={profitValue(calc)} /><Detail label="Breakeven" value={calc ? formatUsd(calc.breakeven) : 'Unavailable'} /><Detail label="Probability of profit" value="Unavailable" /><Detail label="Volatility" value="Unavailable" />
+  </dl><details className="ad-risk-explanation"><summary>How is this calculated?</summary><p>Expiry intrinsic value minus the quoted premium, for one unit on the buyer side. Supported debit spreads cap the payout at the strike width. No probability or volatility model is used.</p></details></section>
+}
+function ContractDetails({ order, calc }: { order: ExplorerOrder; calc: Calculation | null }) {
+  const navigate = useNavigate()
+  return <section className="ad-panel ad-contract"><h2>Contract Details <span className="ad-info" title="Live order terms and illustrative analysis assumptions.">ⓘ</span></h2><dl>
+    <Detail label="Option type" value={orderType(order)} /><Detail label="Position" value="Illustrative buyer · one unit" /><Detail label="Strike price / structure" value={order.strikes} /><Detail label="Expiry date" value={formatExpiry(order.expiry)} /><Detail label="Days to expiry" value={daysToExpiry(order.expiry) + ' days'} /><Detail label="Premium" value={formatNumber(order.pricePerContract, 6)} /><Detail label="Denomination" value={order.collateral} /><Detail label="Illustrative cost" value={calc ? formatNumber(calc.premium, 6) + ' USDC' : 'Unavailable'} /><Detail label="Available size" value={formatNumber(order.availableAmount, 4) + ' ' + order.collateral} /><Detail label="Settlement" value="Unavailable" /><Detail label="Exercise style" value="Unavailable" /><Detail label="Underlying" value={order.asset} />
+    <div><dt>Order ID</dt><dd className="ad-order-id" title={order.id}>{order.id}</dd></div>
+  </dl><button type="button" className="ad-market-button" onClick={() => navigate('/markets')}>View live Markets <span aria-hidden="true">→</span></button></section>
+}
+function Detail({ label, value }: { label: string; value: string }) { return <div><dt>{label}</dt><dd>{value}</dd></div> }
 
 function SaveAction({ order, calc }: { order: ExplorerOrder; calc: ReturnType<typeof compute> }) {
   const { items, save, remove } = useSavedStrategies()
@@ -84,14 +220,5 @@ function SaveAction({ order, calc }: { order: ExplorerOrder; calc: ReturnType<ty
   }
   return <button type="button" className="preview-button analyze-save" onClick={handleClick}>{existing ? 'Saved ✓ — Remove' : 'Save Idea'}</button>
 }
-function TradeCard({ order, spot, strikes, type, single }: { order: ExplorerOrder; spot?: number; strikes: number[]; type: 'CALL' | 'PUT'; single: boolean }) { const money = single && spot !== undefined ? payoff.moneyness(type, strikes[0], spot) : undefined; return <section className="analyze-card selected-card"><header><h2>Selected Trade</h2><div className="trade-tags">{single && <span className={type === 'CALL' ? 'bullish' : 'bearish'}>{type === 'CALL' ? 'Bullish' : 'Bearish'}</span>}{money && <span className={`moneyness ${money.toLowerCase()}`}>{money}</span>}</div></header><div className="analyze-asset"><i className={order.asset.toLowerCase()}><Token asset={order.asset} /></i><div><b>{order.asset}</b><small>{single ? (type === 'CALL' ? 'Call' : 'Put') : 'Multi-leg order'}</small></div><strong className={`analyze-type ${type.toLowerCase()}`}>{single ? type : 'MULTI-LEG'}</strong></div><dl><Pair label={single ? 'Strike' : 'Strikes'} value={order.strikes} /><Pair label="Spot price" value={formatUsd(spot)} /><Pair label="Expiry" value={formatExpiry(order.expiry)} /><Pair label="Premium" value={`${formatNumber(order.pricePerContract, 6)} ${order.collateral}`} /><Pair label="Available amount" value={formatNumber(order.availableAmount, 4)} /><Pair label="Order ID" value={`${order.id.slice(0, 12)}…`} /></dl></section> }
-function Meaning({ order, strike, type, premium, safe, spot }: { order: ExplorerOrder; strike: number; type: 'CALL' | 'PUT'; premium: number; safe: boolean; spot?: number }) { const strikes = parseStrikeList(order.strikes), spread = strikes.length === 2, action = type === 'CALL' ? 'buy' : 'sell', direction = type === 'CALL' ? 'rises above' : 'falls below', breakeven = type === 'CALL' ? strike + premium : strike - premium; const money = spot !== undefined ? payoff.moneyness(type, strike, spot) : undefined; const moneySentence = money && spot !== undefined ? <p>{order.asset} is currently trading at {formatUsd(spot)}, {money === 'ATM' ? 'right at the strike' : `${formatUsd(Math.abs(spot - strike))} (${formatNumber(Math.abs((spot - strike) / strike) * 100, 1)}%) ${spot > strike ? 'above' : 'below'} the strike`} — this option is currently {money === 'ITM' ? 'in the money' : money === 'ATM' ? 'at the money' : 'out of the money'}.</p> : null; if (spread && safe) { const maxGain = spreadPayoff.maxGainTotal(strikes[0], strikes[1], premium, 1); return <section className="analyze-card analyze-meaning"><h2>What this means</h2><p>You are looking at an {order.asset} {type === 'CALL' ? 'bull call' : 'bear put'} debit spread with strikes at {formatUsd(strikes[0])} and {formatUsd(strikes[1])}.</p><p>As the spread buyer, you pay {formatNumber(premium, 6)} USDC. The long {type === 'CALL' ? 'call' : 'put'} creates the directional exposure and the short {type === 'CALL' ? 'higher-strike call' : 'lower-strike put'} caps the gain.</p><p>At expiry, the spread begins making a net profit if {order.asset} {direction} approximately {formatUsd(breakeven)}.</p><p>Loss is limited to the {formatNumber(premium, 6)} USDC debit and maximum gain is {formatNumber(maxGain, 6)} USDC per spread. Current spot is {formatUsd(spot)}.</p>{moneySentence}</section> } return <section className="analyze-card analyze-meaning"><h2>What this means</h2><p>You are looking at an {order.asset} {type.toLowerCase()} with a strike price of {formatUsd(strike)}.</p><p>If you take this order as the option buyer, you pay {formatNumber(order.pricePerContract, 6)} {order.collateral} for the right to {action} at expiry on {formatExpiry(order.expiry)}.</p>{safe ? <><p>At expiry, the position begins making a net profit if {order.asset} {direction} approximately {formatUsd(breakeven)}.</p><p>If the option expires worthless, loss is limited to the {formatNumber(premium, 6)} USDC premium. Current spot is {formatUsd(spot)}.</p></> : <p>The premium is shown in its native denomination. USD payoff is withheld unless the premium and underlying values are safely comparable.</p>}{moneySentence}</section> }
 function compute(facts: PayoffFacts) { if (facts.kind === 'spread') { const inputs: spreadPayoff.SpreadPayoffInputs = { ...facts, positionSize: 1 }, curve = spreadPayoff.buildPayoffCurve(inputs, .35, 71), breakeven = spreadPayoff.breakevenPrice(facts.spreadType, facts.nearStrike, facts.premium), scenarios = spreadPayoff.buildScenarios(inputs, SCENARIOS); return { type: facts.spreadType === 'CALL_SPREAD' ? 'CALL' as const : 'PUT' as const, strike: facts.nearStrike, premium: facts.premium, spot: facts.currentPrice, curve, breakeven, maxLoss: spreadPayoff.maxLossTotal(facts.premium, 1), maxProfit: spreadPayoff.maxGainTotal(facts.nearStrike, facts.farStrike, facts.premium, 1), isSpread: true, rows: scenarios.map(({ changePercent: change, price, pnl }) => ({ change, price, pnl, returnPct: facts.premium ? pnl / facts.premium * 100 : 0 })) } } const inputs: payoff.PayoffInputs = { optionType: facts.optionType, strike: facts.strike, premium: facts.premium, positionSize: 1, currentPrice: facts.currentPrice }, curve = payoff.buildPayoffCurve(inputs, .35, 71), breakeven = payoff.breakevenPrice(facts.optionType, facts.strike, facts.premium), scenarios = payoff.buildScenarios(inputs, SCENARIOS); return { type: facts.optionType, strike: facts.strike, premium: facts.premium, spot: facts.currentPrice, curve, breakeven, maxLoss: payoff.maxLossTotal(facts.premium, 1), maxProfit: facts.optionType === 'CALL' ? undefined : payoff.maxPutGainTotal(facts.strike, facts.premium, 1), isSpread: false, rows: scenarios.map(({ changePercent: change, price, pnl }) => ({ change, price, pnl, returnPct: facts.premium ? pnl / facts.premium * 100 : 0 })) } }
-function Diagram({ asset, calc }: { asset: string; calc: ReturnType<typeof compute> }) { const vals = calc.curve.map(point => point.pnl), min = Math.min(0, ...vals), max = Math.max(0, ...vals); return <section className="analyze-card payoff-diagram"><header><div><h2>Payoff Diagram at Expiry</h2><p>Illustrative payoff for taking this order as the option buyer.</p></div><span>At expiry</span></header><div className="payoff-markers"><span className="spot">Spot {formatUsd(calc.spot)}</span><span className="strike">Strike {formatUsd(calc.strike)}</span><span className="breakeven">Break-even {formatUsd(calc.breakeven)}</span></div><ResponsiveContainer width="100%" height={244}><LineChart data={calc.curve}><CartesianGrid stroke="#1e3445" strokeDasharray="3 4" vertical={false} /><XAxis dataKey="price" type="number" tickFormatter={value => formatUsd(value, 0)} tick={{ fill: '#9dadbd', fontSize: 11 }} /><YAxis tickFormatter={value => formatUsd(value, 0)} tick={{ fill: '#9dadbd', fontSize: 11 }} width={72} /><Tooltip formatter={value => [formatUsd(Number(value)), 'Net P&L']} contentStyle={{ background: '#0a1725', border: '1px solid #29445a', borderRadius: 8 }} /><ReferenceArea y1={0} y2={max} fill="#19d7b4" fillOpacity={.08} /><ReferenceArea y1={min} y2={0} fill="#ff3e7f" fillOpacity={.08} /><ReferenceLine y={0} stroke="#c3ced8" /><ReferenceLine x={calc.strike} stroke="#ffad36" strokeDasharray="4 4" /><ReferenceLine x={calc.breakeven} stroke="#b77cff" strokeDasharray="4 4" /><ReferenceLine x={calc.spot} stroke="#2be4c7" strokeDasharray="4 4" /><Area dataKey="pnl" fill="#2be4c7" fillOpacity={.05} stroke="none" /><Line type="linear" dataKey="pnl" stroke="#2be4c7" strokeWidth={3} dot={false} isAnimationActive={false} /></LineChart></ResponsiveContainer><small>{asset} price at expiry (USD) · Net P&amp;L (USD)</small></section> }
-function Overview({ order, calc }: { order: ExplorerOrder; calc: ReturnType<typeof compute> }) { const isCall = calc.type === 'CALL'; return <div className="analysis-overview"><article><span>Buyer assumption</span><strong>{calc.isSpread ? (isCall ? 'Bull Call Spread' : 'Bear Put Spread') : `Long ${isCall ? 'Call' : 'Put'}`}</strong><p>You pay the live order premium to open the position.</p></article><article><span>Profit condition</span><strong>{isCall ? 'Expiry above' : 'Expiry below'} {formatUsd(calc.breakeven)}</strong><p>Net P&amp;L becomes positive beyond the break-even level.</p></article><article><span>Loss condition</span><strong>Premium at risk</strong><p>Maximum loss is limited to {formatNumber(calc.maxLoss, 6)} USDC per contract.</p></article><article><span>Expiry status</span><strong>{timeLeft(Number(order.expiry) * 1000 - Date.now())}</strong><p>{formatCompactExpiry(order.expiry)} · payoff settles at expiry.</p></article></div> }
-function Risks({ calc, order }: { calc: ReturnType<typeof compute>; order: ExplorerOrder }) { const remaining = Number(order.expiry) * 1000 - Date.now(), money = payoff.moneyness(calc.type, calc.strike, calc.spot), toStrike = calc.spot - calc.strike, toBreakeven = calc.spot - calc.breakeven, ratio = payoff.riskRewardRatio(calc.maxProfit, calc.maxLoss); return <div className="analyze-risk"><Risk label="Max loss" value={`${formatNumber(calc.maxLoss, 6)} USDC`} hint="Premium per contract" /><Risk label="Break-even price" value={formatUsd(calc.breakeven)} hint={calc.type === 'CALL' ? 'Strike + premium' : 'Strike − premium'} /><Risk label="Cost / premium" value={`${formatNumber(calc.premium, 6)} USDC`} hint="Per contract" /><Risk label="Potential upside" value={calc.maxProfit === undefined ? 'Unlimited' : formatUsd(calc.maxProfit)} hint={calc.isSpread ? 'Capped at spread width minus premium' : calc.maxProfit === undefined ? 'Long call at expiry' : 'If underlying reaches zero'} /><Risk label="Time to expiry" value={timeLeft(remaining)} hint={formatCompactExpiry(order.expiry)} /><Risk label="Moneyness" value={money} hint={money === 'ATM' ? 'Spot at strike' : `${formatUsd(Math.abs(toStrike))} ${toStrike > 0 ? 'above' : 'below'} strike`} /><Risk label="Days to expiry" value={`${daysToExpiry(order.expiry)}d`} hint={`Precise: ${timeLeft(remaining)}`} /><Risk label="Risk / reward" value={ratio === undefined ? 'Uncapped' : `1 : ${formatNumber(ratio, 2)}`} hint="Max profit ÷ max loss" /><Risk label="Spot vs strike" value={`${toStrike >= 0 ? '+' : ''}${formatUsd(toStrike)}`} hint={`${formatNumber(Math.abs(toStrike / calc.strike) * 100, 1)}% ${toStrike >= 0 ? 'above' : 'below'} strike`} /><Risk label="Spot vs break-even" value={`${toBreakeven >= 0 ? '+' : ''}${formatUsd(toBreakeven)}`} hint={`${formatNumber(Math.abs(toBreakeven / calc.breakeven) * 100, 1)}% ${toBreakeven >= 0 ? 'above' : 'below'} break-even`} /></div> }
-function ScenarioTable({ asset, calc }: { asset: string; calc: ReturnType<typeof compute> }) { return <section className="scenario-card"><table><thead><tr><th>{asset} price change</th><th>Price at expiry</th><th>Net P&amp;L</th><th>Return on premium</th></tr></thead><tbody>{calc.rows.map(row => <tr key={row.change} className={row.change === 0 ? 'current' : ''}><td>{row.change === 0 ? 'Current' : `${row.change > 0 ? '+' : ''}${row.change}%`}</td><td>{formatUsd(row.price)}</td><td className={row.pnl >= 0 ? 'profit' : 'loss'}>{row.pnl >= 0 ? '+' : ''}{formatUsd(row.pnl)}</td><td className={row.pnl >= 0 ? 'profit' : 'loss'}>{row.returnPct >= 0 ? '+' : ''}{formatNumber(row.returnPct, 1)}%</td></tr>)}</tbody></table></section> }
-function Unsupported({ order, single, type, spot }: { order: ExplorerOrder; single: boolean; type: 'CALL' | 'PUT'; spot?: number }) { const strikes = parseStrikeList(order.strikes), money = single && spot !== undefined && strikes.length === 1 ? payoff.moneyness(type, strikes[0], spot) : undefined, remaining = Number(order.expiry) * 1000 - Date.now(); return <section className="analyze-card analyze-unsupported"><h2>Payoff analysis unavailable</h2><p>{!single ? 'Detailed payoff analysis is available for single-leg Calls and Puts and safely ordered two-strike vertical debit spreads. This order cannot be interpreted as one of those supported structures.' : `This order premium is denominated in ${order.collateral}. A compatible live USD conversion is not available, so USD break-even and P&L are not shown.`}</p><dl><Pair label="Premium" value={`${formatNumber(order.pricePerContract, 6)} ${order.collateral}`} /><Pair label="Strike(s)" value={order.strikes} /><Pair label="Expiry" value={formatExpiry(order.expiry)} /></dl><p className="analyze-unsupported-note">Strike and spot are always USD, so moneyness and time-to-expiry are still shown below even though USD P&amp;L is not.</p><div className="analyze-risk">{money && <Risk label="Moneyness" value={money} hint={money === 'ATM' ? 'Spot at strike' : `Spot is ${money === 'ITM' ? 'in' : 'out of'} the money`} />}<Risk label="Days to expiry" value={`${daysToExpiry(order.expiry)}d`} hint={`Precise: ${timeLeft(remaining)}`} /></div></section> }
-function Pair({ label, value }: { label: string; value: string }) { return <div><dt>{label}</dt><dd>{value}</dd></div> }
-function Risk({ label, value, hint }: { label: string; value: string; hint: string }) { return <article><span>{label}</span><b>{value}</b><small>{hint}</small></article> }
 function timeLeft(value: number) { if (value <= 0) return 'Expired'; const hours = Math.floor(value / 3_600_000), days = Math.floor(hours / 24); return days ? `${days}d ${hours % 24}h` : `${hours}h ${Math.floor(value / 60_000) % 60}m` }
