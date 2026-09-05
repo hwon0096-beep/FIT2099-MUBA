@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { NutIcon } from '../components/VisualSystem'
 import PremiumUnlockModal from '../components/PremiumUnlockModal'
 import SavedStrategiesSection from '../components/SavedStrategiesSection'
+import SimpleStrategyOverview, { OverviewHero } from '../components/SimpleStrategyOverview'
 import { useAccount } from '../context/AccountContext'
 import { formatCompactExpiry, parseOrderNumber, parseStrikeList } from '../lib/formatters'
 import { loadExplorerData, type ExplorerData, type ExplorerOrder } from '../lib/thetanuts'
@@ -157,10 +158,13 @@ export default function StrategyLabPage() {
   }
 
   return <main className="app-shell strategy-lab">
-    <header className="strategy-lab__hero">
+    <header className={`strategy-lab__hero${activeTab === 'overview' ? ' strategy-lab__hero--overview' : ''}`}>
+      {activeTab === 'overview' && <OverviewHero />}
+      <div className="strategy-lab__legacy-hero">
       <div className="strategy-lab__intro"><p className="eyebrow">STRATEGY LAB</p><h1>Paper Trading</h1><p>Practice trading real Thetanuts options with virtual funds before going live. Test strategies, compare scenarios, and build confidence.</p></div>
       <div className="strategy-lab__art" aria-hidden="true"><i /><i /><i /></div>
       <section className="strategy-lab__safety"><NutIcon name="shield" /><div><h2>No real funds at risk</h2><p>All trades are simulated with virtual USDC using live Thetanuts market data. Nothing you do here affects your wallet.</p><button type="button">Learn more →</button></div></section>
+      </div>
     </header>
     <nav className="strategy-lab__tabs" aria-label="Strategy Lab sections">{STRATEGY_LAB_TABS.map(({ value, icon, label }) => <button type="button" key={value} className={activeTab === value ? 'active' : ''} onClick={() => setActiveTab(value)}><NutIcon name={icon} />{label}</button>)}</nav>
     {activeTab === 'paper-trading' && <div className="strategy-lab__workspace">
@@ -172,7 +176,7 @@ export default function StrategyLabPage() {
       <aside className="strategy-lab__side"><PaperOrderTicket contract={selected} quantity={quantity} onQuantityChange={setQuantity} /><RecentPaperTrades /></aside>
     </div>}
     {activeTab === 'saved-strategies' && <SavedStrategiesSection orders={data ? orders : null} />}
-    {activeTab === 'overview' && <section className="strategy-card"><div className="empty-state">Overview coming soon.</div></section>}
+    {activeTab === 'overview' && <SimpleStrategyOverview />}
     {activeTab === 'compare' && <section className="strategy-card"><div className="empty-state">Compare coming soon.</div></section>}
     {showUnlock && <PremiumUnlockModal onClose={() => setShowUnlock(false)} />}
   </main>
