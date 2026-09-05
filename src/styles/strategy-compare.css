@@ -1,0 +1,17 @@
+.compare-strategies{display:flex;flex-direction:column;gap:14px}
+.compare-strategies>p{color:#9aa9b9;font-size:13px;margin:0}
+.compare-picker{display:flex;flex-wrap:wrap;gap:8px}
+.compare-picker__item{display:flex;align-items:center;gap:7px;border:1px solid #20364c;border-radius:999px;padding:8px 14px;font-size:12px;color:#c7d3de;cursor:pointer;background:#0a1623}
+.compare-picker__item input{accent-color:#12d6bf}
+.compare-picker__item.selected{border-color:#12d6bf;background:rgba(18,214,191,.1);color:#eff4f7}
+.compare-picker__item.disabled{opacity:.45;cursor:not-allowed}
+.compare-table-wrap{overflow-x:auto}
+.compare-table{border-collapse:collapse;min-width:600px;width:100%}
+.compare-table th,.compare-table td{border-bottom:1px solid #20364c;padding:12px 14px;text-align:left;font-size:13px;white-space:nowrap}
+.compare-table th{color:#8fa0b4;font-weight:650;vertical-align:top}
+.compare-table thead th:first-child,.compare-table tbody td:first-child{color:#8fa0b4;text-transform:uppercase;font-size:10px;letter-spacing:.06em;white-space:nowrap}
+.compare-table__head-asset{color:#eff4f7;font-size:14px;font-weight:800}
+.compare-table__head-name{color:#c7d3de;font-size:12px;margin-top:2px;font-weight:400;text-transform:none;letter-spacing:0}
+.compare-table__head-meta{color:#8fa0b4;font-size:11px;margin-top:2px;font-weight:400;text-transform:none;letter-spacing:0}
+.compare-table td.winner{color:#4ce0c6;font-weight:700}
+.compare-winner-badge{color:#4ce0c6;font-size:10px;font-weight:800;margin-left:6px}
