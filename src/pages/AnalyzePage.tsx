@@ -1,7 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Area, CartesianGrid, ComposedChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import StrategyRecommendations from '../components/StrategyRecommendations'
 import AIAnalyst from '../components/AIAnalyst'
 import { buildAnalysisContext } from '../lib/analysisContext'
 import { daysToExpiry, formatCompactExpiry, formatExpiry, formatNumber, formatUsd, parseOrderNumber, parseStrikeList } from '../lib/formatters'
@@ -21,9 +20,8 @@ export default function AnalyzePage() {
   const navigate = useNavigate(), [params] = useSearchParams(), [data, setData] = useState<ExplorerData | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState<string | null>(null), [selected, setSelected] = useState<string | null>(null), applied = useRef(false), lastRequestedId = useRef<string | null>(null)
   useEffect(() => { let live = true; loadExplorerData().then(result => { if (live) setData(result) }).catch(reason => { if (live) setError(reason instanceof Error ? reason.message : 'Unable to load live analysis data.') }).finally(() => { if (live) setLoading(false) }); return () => { live = false } }, [])
   const orders = data?.orders ?? []
-  // Same-route navigations (e.g. Strategy Ideas' "Analyze this order →") reuse this component
-  // instance rather than remounting it, so a later ?order= change must still be honored even after
-  // the initial-mount restore-from-sessionStorage below has already run once.
+  // Same-route navigations reuse this component instance rather than remounting it, so a later
+  // ?order= change must still be honored after the initial sessionStorage restore has run once.
   useEffect(() => {
     if (!orders.length) return
     const requestedId = params.get('order')
@@ -44,15 +42,121 @@ export default function AnalyzePage() {
   const order = orders.find(item => item.id === selected) ?? null
   const analystContext = useMemo(() => order ? buildAnalysisContext(order, data?.marketData) : null, [data?.marketData, order])
   return <main className="analyze-page"><div className="analyze-shell">
-    {error && <div className="analyze-notice" role="alert">{error}</div>}
-    {data?.errors.map(message => <div className="analyze-notice" role="status" key={message}>{message}</div>)}
-    {!order ? <><header className="analyze-heading"><div><h1>Analyze <em>Trade</em></h1><p>Understand the risk and expiry outcome of a live OptionBook order.</p></div><button type="button" onClick={() => navigate('/markets')}>← Back to Markets</button></header><AnalyzeEmpty onBrowse={() => navigate('/markets')} loading={loading} /></>
+    {!order && error && <div className="analyze-notice" role="alert">Live OptionBook orders are temporarily unavailable. Please try again or browse all live markets.</div>}
+    {!order && data?.errors.length ? <div className="analyze-notice" role="status">Some live orders could not be loaded. Browse all live markets to see the latest available opportunities.</div> : null}
+    {order && error && <div className="analyze-notice" role="alert">{error}</div>}
+    {order && data?.errors.map(message => <div className="analyze-notice" role="status" key={message}>{message}</div>)}
+    {!order ? <AnalyzeEmpty orders={orders} onAnalyze={id => navigate(`/analyze?order=${encodeURIComponent(id)}`)} onBrowse={() => navigate('/markets')} loading={loading} />
       : <TradeAnalysis order={order} marketData={data?.marketData} analystContext={analystContext} />}
-    {orders.length > 0 && <StrategyRecommendations orders={orders} marketData={data?.marketData} />}
+    {order && <StrategyLabHandoff />}
   </div></main>
 }
 
-function AnalyzeEmpty({ onBrowse, loading }: { onBrowse: () => void; loading: boolean }) { const features = [['↗', 'Payoff at Expiry', 'Visualize profit and loss across possible expiry prices.'], ['◈', 'Risk Summary', 'See max loss, break-even, premium and potential upside.'], ['▤', 'Scenario Analysis', 'Compare outcomes across different underlying prices.'], ['✦', 'Plain-English Explanation', 'Understand what the option means without advanced options knowledge.'], ['◷', 'Time to Expiry', 'See how long remains until the live order expires.']]; return <section className="analyze-empty-state"><p className="analyze-kicker">ANALYZE LIVE OPTIONS</p><h2>Analyze Trade</h2><p>Understand the risk and payoff of a live Thetanuts OptionBook order before you trade.</p><button type="button" onClick={onBrowse}>Browse Live Markets <span>→</span></button>{loading && <small>Checking the live OptionBook…</small>}<div><h3>What you'll get</h3><section>{features.map(([icon, title, description]) => <article key={title}><i>{icon}</i><strong>{title}</strong><span>{description}</span></article>)}</section></div></section> }
+function StrategyLabHandoff() {
+  const navigate = useNavigate()
+  return <section className="analyze-strategy-handoff" aria-labelledby="analyze-strategy-handoff-title">
+    <div className="analyze-strategy-handoff-copy">
+      <h2 id="analyze-strategy-handoff-title">Looking for a strategy instead?</h2>
+      <p>Compare bullish, bearish and neutral approaches<br />using live OptionBook opportunities.</p>
+    </div>
+    <button type="button" onClick={() => navigate('/portfolio')}>Open Strategy Lab <span aria-hidden="true">→</span></button>
+  </section>
+}
+
+function AnalyzeEmpty({ orders, onAnalyze, onBrowse, loading }: { orders: ExplorerOrder[]; onAnalyze: (id: string) => void; onBrowse: () => void; loading: boolean }) {
+  const featuredOrders = useMemo(() => pickFeaturedOrders(orders), [orders])
+  const features = [
+    ['payoff', 'Payoff at Expiry', 'Visualize profit and loss across possible expiry prices.'],
+    ['risk', 'Risk Summary', 'See max loss, break-even, premium and potential upside.'],
+    ['scenario', 'Scenario Analysis', 'Compare outcomes across different underlying prices.'],
+    ['explanation', 'Plain-English Explanation', 'Understand what the option means without advanced options knowledge.'],
+  ] as const
+
+  return <section className="analyze-empty-state">
+    <div className="analyze-empty-hero">
+      <div className="analyze-empty-hero-copy">
+        <p className="analyze-kicker">ANALYZE LIVE OPTIONS</p>
+        <h1>Analyze <em>Trade</em></h1>
+        <p className="analyze-empty-subtitle">Understand the risk and payoff of a live OptionBook order.</p>
+        <p className="analyze-empty-supporting">Select a live order below to get started, or browse all markets.</p>
+      </div>
+      <div className="analyze-empty-hero-visual" aria-hidden="true">
+        <div className="analyze-empty-orbit analyze-empty-orbit-one" />
+        <div className="analyze-empty-orbit analyze-empty-orbit-two" />
+        <div className="analyze-empty-signal-card"><span>LIVE ORDER</span><strong>Payoff ready</strong><i><b /><b /><b /><b /><b /></i></div>
+      </div>
+    </div>
+
+    <section className="analyze-order-picker" aria-labelledby="featured-live-orders-title">
+      <header className="analyze-orders-heading">
+        <div><p className="analyze-section-kicker">START WITH A REAL ORDER</p><h2 id="featured-live-orders-title">Featured Live Orders</h2><p>Choose an active Thetanuts order to open the full analysis workspace.</p></div>
+        <span className="analyze-orders-live"><i />Live data</span>
+      </header>
+      {loading ? <div className="analyze-order-status" role="status"><span className="analyze-loading-dot" /><div><strong>Loading live OptionBook orders...</strong><small>Finding currently available orders to analyze.</small></div></div>
+        : featuredOrders.length ? <div className="analyze-order-list">{featuredOrders.map(order => <AnalyzeOrderRow key={order.id} order={order} onAnalyze={onAnalyze} />)}</div>
+        : <div className="analyze-order-status" role="status"><span className="analyze-empty-status-icon">—</span><div><strong>No live orders are currently available.</strong><small>Check all live markets for the latest order activity.</small></div></div>}
+      <button type="button" className="analyze-browse-button" onClick={onBrowse}>Browse All Live Markets <span aria-hidden="true">→</span></button>
+    </section>
+
+    <section className="analyze-feature-summary" aria-labelledby="analyze-feature-summary-title">
+      <header><p className="analyze-section-kicker">WHY ANALYZE?</p><h2 id="analyze-feature-summary-title">Clarity before you trade</h2></header>
+      <div className="analyze-feature-grid">{features.map(([icon, title, description]) => <article key={title}><i className="analyze-feature-glyph"><FeatureIcon kind={icon} /></i><div><strong>{title}</strong><span>{description}</span></div></article>)}</div>
+    </section>
+  </section>
+}
+
+function FeatureIcon({ kind }: { kind: 'payoff' | 'risk' | 'scenario' | 'explanation' }) {
+  return <svg className="analyze-feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {kind === 'payoff' && <><path d="M4 18 9 12l4 3 7-9" /><path d="M16 6h4v4" /><path d="M4 20h16" /></>}
+    {kind === 'risk' && <><path d="M12 3 19 6v5c0 4.7-2.9 8.2-7 10-4.1-1.8-7-5.3-7-10V6l7-3Z" /><path d="m8.5 12 2.2 2.2 4.8-5" /></>}
+    {kind === 'scenario' && <><path d="M8 6h11M8 12h11M8 18h11" /><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01" strokeWidth="2.5" /></>}
+    {kind === 'explanation' && <><path d="M6 3h8l4 4v14H6V3Z" /><path d="M14 3v5h4M9 12h6M9 16h6" /></>}
+  </svg>
+}
+
+function AnalyzeOrderRow({ order, onAnalyze }: { order: ExplorerOrder; onAnalyze: (id: string) => void }) {
+  const type = order.optionType === 'CALL' ? 'Call' : 'Put'
+  return <article className="analyze-order-row">
+    <div className="analyze-order-asset"><i className={'analyze-empty-token ' + order.asset.toLowerCase()}><Token asset={order.asset} /></i><strong>{order.asset}</strong></div>
+    <div className="analyze-order-field analyze-order-type-field"><span>Position</span><strong className={'analyze-empty-type analyze-empty-type-' + order.optionType.toLowerCase()}>{type}</strong></div>
+    <div className="analyze-order-field"><span>Strike</span><strong>{order.strikes}</strong></div>
+    <div className="analyze-order-field"><span>Expiry (DTE)</span><strong>{featuredExpiry(order.expiry)} <small>({daysToExpiry(order.expiry)}d)</small></strong></div>
+    <div className="analyze-order-field"><span>Premium</span><strong>{formatNumber(order.pricePerContract, 6)} <small>{order.collateral}</small></strong></div>
+    <button type="button" className="analyze-order-button" onClick={() => onAnalyze(order.id)}>Analyze <span aria-hidden="true">→</span></button>
+  </article>
+}
+
+function pickFeaturedOrders(orders: ExplorerOrder[]) {
+  const usable = orders.filter(isUsableFeaturedOrder).sort((a, b) => Number(a.expiry) - Number(b.expiry) || a.asset.localeCompare(b.asset))
+  const selected: ExplorerOrder[] = []
+  const assets = new Set<string>(), types = new Set<string>()
+  const addMatching = (predicate: (order: ExplorerOrder) => boolean) => {
+    for (const order of usable) {
+      if (selected.length >= 5) break
+      if (!selected.includes(order) && predicate(order)) {
+        selected.push(order)
+        assets.add(order.asset.trim().toUpperCase())
+        types.add(order.optionType)
+      }
+    }
+  }
+  addMatching(order => !assets.has(order.asset.trim().toUpperCase()) && !types.has(order.optionType))
+  addMatching(order => !assets.has(order.asset.trim().toUpperCase()))
+  addMatching(order => !types.has(order.optionType))
+  addMatching(() => true)
+  return selected.sort((a, b) => Number(a.expiry) - Number(b.expiry))
+}
+
+function isUsableFeaturedOrder(order: ExplorerOrder) {
+  const expiry = Number(order.expiry)
+  return Boolean(order.id && order.asset && (order.optionType === 'CALL' || order.optionType === 'PUT') && order.strikes && parseStrikeList(order.strikes).length && order.pricePerContract && order.collateral && Number.isFinite(expiry) && expiry * 1000 > Date.now())
+}
+
+function featuredExpiry(timestamp: string) {
+  const date = new Date(Number(timestamp) * 1000)
+  if (Number.isNaN(date.getTime())) return 'Unavailable'
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', timeZone: 'UTC' }).format(date)
+}
 
 
 type Calculation = ReturnType<typeof compute>
