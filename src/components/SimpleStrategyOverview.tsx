@@ -11,11 +11,12 @@ export function showsPremiumLink(tier: 'normal' | 'premium' | null): boolean { r
 
 type CatalogueOutlook = 'bullish' | 'bearish' | 'neutral'
 type CatalogueAccess = 'Free' | 'Premium'
-interface CatalogueStrategy { name: string; outlook: CatalogueOutlook; access: CatalogueAccess; profile: string; explanation: string; risk?: string[] }
+type FreeStrategyType = 'CALL' | 'PUT'
+interface CatalogueStrategy { name: string; outlook: CatalogueOutlook; access: CatalogueAccess; profile: string; explanation: string; risk?: string[]; paperTradingType?: FreeStrategyType }
 
 const FREE_STRATEGIES: CatalogueStrategy[] = [
-  { name: 'Long Call', outlook: 'bullish', access: 'Free', profile: 'Directional upside', explanation: 'Buy a call when you expect the underlying asset to rise.', risk: ['Loss limited to premium paid', 'Upside increases as price rises'] },
-  { name: 'Long Put', outlook: 'bearish', access: 'Free', profile: 'Directional downside', explanation: 'Buy a put when you expect the underlying asset to fall.', risk: ['Loss limited to premium paid', 'Value increases as price falls'] },
+  { name: 'Long Call', outlook: 'bullish', access: 'Free', profile: 'Directional upside', explanation: 'Buy a call when you expect the underlying asset to rise.', risk: ['Loss limited to premium paid', 'Upside increases as price rises'], paperTradingType: 'CALL' },
+  { name: 'Long Put', outlook: 'bearish', access: 'Free', profile: 'Directional downside', explanation: 'Buy a put when you expect the underlying asset to fall.', risk: ['Loss limited to premium paid', 'Value increases as price falls'], paperTradingType: 'PUT' },
 ]
 
 const ADVANCED_STRATEGIES: CatalogueStrategy[] = [
@@ -25,7 +26,7 @@ const ADVANCED_STRATEGIES: CatalogueStrategy[] = [
   { name: 'Butterfly', outlook: 'neutral', access: 'Premium', profile: 'Target-price strategy', explanation: 'A multi-leg strategy designed around a target expiry price with defined risk and reward.' },
 ]
 
-export default function SimpleStrategyOverview() {
+export default function SimpleStrategyOverview({ onExplore }: { onExplore?: (type: FreeStrategyType) => void }) {
   const { tier } = useAccount()
   const [modal, dispatch] = useReducer(overviewModalReducer, null)
   const isFree = showsPremiumLink(tier)
@@ -37,7 +38,7 @@ export default function SimpleStrategyOverview() {
     </section>
     <section className="overview-catalogue-group" aria-labelledby="free-strategies-title">
       <header className="overview-catalogue-heading"><div><p className="eyebrow">START HERE</p><h2 id="free-strategies-title">Free Strategies</h2><p>Simple directional strategies with defined premium risk.</p></div><span className="overview-section-count">2 strategies</span></header>
-      <div className="overview-catalogue-grid overview-catalogue-grid--free">{FREE_STRATEGIES.map(strategy => <CatalogueCard key={strategy.name} strategy={strategy} locked={false} />)}</div>
+      <div className="overview-catalogue-grid overview-catalogue-grid--free">{FREE_STRATEGIES.map(strategy => <CatalogueCard key={strategy.name} strategy={strategy} locked={false} onExplore={onExplore} />)}</div>
     </section>
     <section className="overview-catalogue-group" aria-labelledby="advanced-strategies-title">
       <header className="overview-catalogue-heading"><div><p className="eyebrow">FOR MORE CONTROL</p><h2 id="advanced-strategies-title">Advanced Strategies</h2><p>Multi-leg structures for capped risk, range views, and target prices.</p></div><span className="overview-section-count">4 strategies</span></header>
@@ -48,11 +49,11 @@ export default function SimpleStrategyOverview() {
   </div>
 }
 
-function CatalogueCard({ strategy, locked, onUnlock }: { strategy: CatalogueStrategy; locked: boolean; onUnlock?: () => void }) {
+function CatalogueCard({ strategy, locked, onUnlock, onExplore }: { strategy: CatalogueStrategy; locked: boolean; onUnlock?: () => void; onExplore?: (type: FreeStrategyType) => void }) {
   return <article className={`overview-catalogue-card overview-catalogue-card--${strategy.outlook}${locked ? ' is-locked' : ''}`}>
     <header className="overview-catalogue-card__top"><span className={`overview-outlook overview-outlook--${strategy.outlook}`}>{strategy.outlook[0].toUpperCase() + strategy.outlook.slice(1)}</span><span className={`overview-access-badge overview-access-badge--${strategy.access.toLowerCase()}`}>{locked && <span aria-hidden="true">🔒</span>}{strategy.access}</span></header>
     <div className="overview-catalogue-card__body"><h3>{strategy.name}</h3><strong>{strategy.profile}</strong><p>{strategy.explanation}</p>{strategy.risk && <ul>{strategy.risk.map(item => <li key={item}>{item}</li>)}</ul>}</div>
-    <footer>{locked ? <button type="button" className="overview-unlock-action" onClick={onUnlock}><span aria-hidden="true">🔒</span> Unlock Premium <NutIcon name="arrow" /></button> : <span className="overview-explore-action">Explore <NutIcon name="arrow" /></span>}</footer>
+    <footer>{locked ? <button type="button" className="overview-unlock-action" onClick={onUnlock}><span aria-hidden="true">🔒</span> Unlock Premium <NutIcon name="arrow" /></button> : <button type="button" className="overview-explore-action" onClick={() => { if (strategy.paperTradingType) onExplore?.(strategy.paperTradingType) }}>Explore <NutIcon name="arrow" /></button>}</footer>
   </article>
 }
 

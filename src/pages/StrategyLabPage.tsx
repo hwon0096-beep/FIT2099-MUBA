@@ -1137,7 +1137,7 @@ export default function StrategyLabPage() {
 
 
       {activeTab === 'overview' && (
-        <SimpleStrategyOverview />
+        <SimpleStrategyOverview onExplore={(type) => { setTypeFilter(type); setActiveTab('paper-trading') }} />
       )}
 
 

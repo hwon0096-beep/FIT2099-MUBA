@@ -613,7 +613,11 @@
 }
 
 .overview-explore-action {
+  background: transparent;
+  border: 0;
   color: #5fe2c9;
+  cursor: pointer;
+  padding: 0;
 }
 
 .overview-explore-action svg,
